@@ -61,12 +61,12 @@ def run_script():
         certificaten_df = pd.read_excel(input_file_path, sheet_name='Certificaten')
 
         # Zorg ervoor dat 'Nieuwe-Orgnaam' in alle werkbladen zit
-        if 'Nieuwe-Orgnaam' not in domeinen_df.columns or 'Nieuwe-Orgnaam' not in toepassingen_df.columns or 'Nieuwe-Orgnaam' not in certificaten_df.columns:
-            messagebox.showerror("Error", "De kolom 'Nieuwe-Orgnaam' ontbreekt in één of meerdere werkbladen.")
+        if 'Nieuwe-OrgNaam' not in domeinen_df.columns or 'Nieuwe-OrgNaam' not in toepassingen_df.columns or 'Nieuwe-OrgNaam' not in certificaten_df.columns:
+            messagebox.showerror("Error", "De kolom 'Nieuwe-OrgNaam' ontbreekt in één of meerdere werkbladen.")
             return
 
         # Haal unieke 'Nieuwe-Orgnaam' en 'Nieuwe-Orgcode' op
-        unieke_orgnamen = domeinen_df['Nieuwe-Orgnaam'].unique()
+        unieke_orgnamen = domeinen_df['Nieuwe-OrgNaam'].unique()
 
         # Aantal bestanden tellen
         gemeente_count = 0
@@ -75,16 +75,16 @@ def run_script():
         # Loop door elke unieke 'Nieuwe-Orgnaam'
         for orgnaam in unieke_orgnamen:
             # Filter per werkblad op de huidige 'Nieuwe-Orgnaam'
-            domeinen_filtered = domeinen_df[domeinen_df['Nieuwe-Orgnaam'] == orgnaam]
-            toepassingen_filtered = toepassingen_df[toepassingen_df['Nieuwe-Orgnaam'] == orgnaam]
-            certificaten_filtered = certificaten_df[certificaten_df['Nieuwe-Orgnaam'] == orgnaam]
+            domeinen_filtered = domeinen_df[domeinen_df['Nieuwe-OrgNaam'] == orgnaam]
+            toepassingen_filtered = toepassingen_df[toepassingen_df['Nieuwe-OrgNaam'] == orgnaam]
+            certificaten_filtered = certificaten_df[certificaten_df['Nieuwe-OrgNaam'] == orgnaam]
 
             # Zorg ervoor dat 'Nieuwe-Orgcode' bestaat
-            if 'Nieuwe-Orgcode' not in domeinen_filtered.columns:
-                messagebox.showerror("Error", f"De kolom 'Nieuwe-Orgcode' ontbreekt in het werkblad 'Domeinen' voor orgnaam {orgnaam}.")
+            if 'Nieuwe-OrgCode' not in domeinen_filtered.columns:
+                messagebox.showerror("Error", f"De kolom 'Nieuwe-OrgCode' ontbreekt in het werkblad 'Domeinen' voor orgnaam {orgnaam}.")
                 continue
 
-            orgcode = domeinen_filtered['Nieuwe-Orgcode'].iloc[0]  # Haal de 'Nieuwe-Orgcode' op
+            orgcode = domeinen_filtered['Nieuwe-OrgCode'].iloc[0]  # Haal de 'Nieuwe-Orgcode' op
             output_path = os.path.join(gemeente_dir, f"{orgcode}.xlsx")  # Zet in de 'Gemeente' submap
 
             # Schrijf naar een nieuw Excel-bestand in de 'Gemeente' submap (overschrijven indien bestaat)
@@ -96,7 +96,7 @@ def run_script():
                 # Werk opmaak bij (zoals kolombreedte en vetgedrukte koppen en voeg de tabel toe)
                 for sheet_name, num_columns, table_name in [('Domeinen', 5, 'Domeinen'),
                                                             ('Toepassingen', 8, 'Toepassingen'),
-                                                            ('Certificaten', 8, 'Certificaten')]:
+                                                            ('Certificaten', 13, 'Certificaten')]:
                     worksheet = writer.sheets[sheet_name]
                     for column_cells in worksheet.columns:
                         length = max(len(as_text(cell.value)) for cell in column_cells) + 2
@@ -111,14 +111,14 @@ def run_script():
             gemeente_count += 1
 
         # Loop door elke unieke 'Delegatie-Orgcode' waar 'Delegatie' gelijk is aan 1
-        for delegatie_orgcode in toepassingen_df[toepassingen_df['Delegatie'] == 1]['Delegatie-Orgcode'].unique():
+        for delegatie_orgcode in toepassingen_df[toepassingen_df['Delegatie'] == 1]['Orgcode-certificaat'].unique():
             # Filter per werkblad op de huidige 'Delegatie-Orgcode' en waar 'Delegatie' gelijk is aan 1
-            toepassingen_filtered = toepassingen_df[(toepassingen_df['Delegatie'] == 1) & (toepassingen_df['Delegatie-Orgcode'] == delegatie_orgcode)]
-            certificaten_filtered = certificaten_df[(certificaten_df['Delegatie'] == 1) & (certificaten_df['Delegatie-Orgcode'] == delegatie_orgcode)]
+            toepassingen_filtered = toepassingen_df[(toepassingen_df['Delegatie'] == 1) & (toepassingen_df['Orgcode-certificaat'] == delegatie_orgcode)]
+            certificaten_filtered = certificaten_df[(certificaten_df['Delegatie'] == 1) & (certificaten_df['Orgcode-certificaat'] == delegatie_orgcode)]
 
             # Zorg ervoor dat 'Delegatie-Orgcode' bestaat en niet leeg is
             if delegatie_orgcode is None or delegatie_orgcode == '':
-                messagebox.showerror("Error", f"De kolom 'Delegatie-Orgcode' ontbreekt voor een record in het werkblad.")
+                messagebox.showerror("Error", f"De kolom 'Orgcode-certificaat' ontbreekt voor een record in het werkblad.")
                 continue
 
             delegatie_output_path = os.path.join(dienstenleverancier_dir, f"{delegatie_orgcode}.xlsx")  # Zet in de 'Dienstenleverancier' submap
@@ -132,7 +132,7 @@ def run_script():
 
                 # Werk opmaak bij (zoals kolombreedte en vetgedrukte koppen en voeg de tabel toe)
                 for sheet_name, num_columns, table_name in [('Toepassingen', 8, 'Toepassingen'),
-                                                            ('Certificaten', 8, 'Certificaten')]:
+                                                            ('Certificaten', 13, 'Certificaten')]:
                     worksheet = writer.sheets[sheet_name]
                     for column_cells in worksheet.columns:
                         length = max(len(as_text(cell.value)) for cell in column_cells) + 2
