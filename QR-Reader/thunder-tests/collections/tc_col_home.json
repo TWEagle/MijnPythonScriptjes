@@ -1,0 +1,402 @@
+{
+    "_id": "a449cd67-bc83-484a-b079-a71f96564751",
+    "colName": "Home",
+    "created": "2024-11-05T14:12:00.320Z",
+    "sortNum": 10000,
+    "folders": [],
+    "requests": [
+        {
+            "_id": "86576316-1795-497d-bc35-3eef26d7263d",
+            "colId": "a449cd67-bc83-484a-b079-a71f96564751",
+            "containerId": "",
+            "name": "Client Credentials Authentication",
+            "url": "{{url}}/authenticate",
+            "method": "POST",
+            "sortNum": 10000,
+            "created": "2024-11-05T14:12:00.331Z",
+            "modified": "2024-11-05T14:12:00.331Z",
+            "headers": [
+                {
+                    "name": "Accept",
+                    "value": "application/json"
+                },
+                {
+                    "name": "Content-Type",
+                    "value": "application/x-www-form-urlencoded"
+                },
+                {
+                    "name": "Authorization",
+                    "value": "Bearer QUVTMjU2LUdDTaJLAIRDowpO90BUlXogBc5Vpd3qexlut2gGYVJci0ZCrFzIrCP1ipExEqZkpIFC8B99kj0XIcLvZfLGrmFwypU=",
+                    "isDisabled": true
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "formencoded",
+                "raw": "",
+                "form": [
+                    {
+                        "name": "client_id",
+                        "value": "{{cid}}"
+                    },
+                    {
+                        "name": "client_secret",
+                        "value": "{{csecret}}"
+                    },
+                    {
+                        "name": "grant_type",
+                        "value": "{{gtcc}}"
+                    }
+                ]
+            },
+            "auth": {
+                "type": "none"
+            },
+            "tests": [
+                {
+                    "type": "set-env-var",
+                    "custom": "json.access_token",
+                    "action": "setto",
+                    "value": "{{btoken}}"
+                }
+            ],
+            "postReq": {
+                "inlineScripts": [
+                    {
+                        "script": [
+                            "var jsonData = JSON.parse(responseBody);",
+                            "postman.setGlobalVariable(\"token\", jsonData.access_token);",
+                            "",
+                            "var jsonData = JSON.parse(responseBody);",
+                            "postman.setGlobalVariable(\"refreshtoken\", jsonData.refresh_token);",
+                            "",
+                            ""
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "_id": "04f532d1-b9c9-4b34-9243-a82a0066d40f",
+            "colId": "a449cd67-bc83-484a-b079-a71f96564751",
+            "containerId": "",
+            "name": "Password Authentication",
+            "url": "{{url}}/authenticate",
+            "method": "POST",
+            "sortNum": 20000,
+            "created": "2024-11-05T14:12:00.332Z",
+            "modified": "2024-11-05T14:12:00.332Z",
+            "headers": [
+                {
+                    "name": "Accept",
+                    "value": "application/json"
+                },
+                {
+                    "name": "Content-Type",
+                    "value": "application/x-www-form-urlencoded"
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "formencoded",
+                "raw": "",
+                "form": [
+                    {
+                        "name": "client_id",
+                        "value": "{{cid}}"
+                    },
+                    {
+                        "name": "client_secret",
+                        "value": "{{csecret}}"
+                    },
+                    {
+                        "name": "grant_type",
+                        "value": "{{gtype}}"
+                    },
+                    {
+                        "name": "username",
+                        "value": "{{uname}}"
+                    },
+                    {
+                        "name": "password",
+                        "value": "{{upass}}"
+                    }
+                ]
+            },
+            "auth": {
+                "type": "bearer",
+                "bearer": "{{btoken}}"
+            },
+            "tests": [
+                {
+                    "type": "set-env-var",
+                    "custom": "json.access_token",
+                    "action": "setto",
+                    "value": "{{btoken}}"
+                }
+            ],
+            "postReq": {
+                "inlineScripts": [
+                    {
+                        "script": [
+                            "var jsonData = JSON.parse(responseBody);",
+                            "postman.setGlobalVariable(\"token\", jsonData.access_token);",
+                            "",
+                            "var jsonData = JSON.parse(responseBody);",
+                            "postman.setGlobalVariable(\"refreshtoken\", jsonData.refresh_token);",
+                            "",
+                            ""
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "_id": "546a2a5b-c92e-4f73-99ff-7df22da0063c",
+            "colId": "a449cd67-bc83-484a-b079-a71f96564751",
+            "containerId": "",
+            "name": "Add Package",
+            "url": "{{url}}/v4/packages",
+            "method": "POST",
+            "sortNum": 30000,
+            "created": "2024-11-05T14:12:00.333Z",
+            "modified": "2024-11-05T14:12:00.333Z",
+            "headers": [
+                {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                },
+                {
+                    "name": "Accept",
+                    "value": "application/json"
+                },
+                {
+                    "name": "Authorization",
+                    "value": "",
+                    "isDisabled": true
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "{\n   \"package_name\": \"Test Document\",\n   \"workflow_mode\": \"ONLY_OTHERS\"\n}",
+                "form": []
+            },
+            "auth": {
+                "type": "bearer",
+                "bearer": "{{btoken}}"
+            },
+            "tests": [
+                {
+                    "type": "set-env-var",
+                    "custom": "json.package_id",
+                    "action": "setto",
+                    "value": "{{pid}}"
+                }
+            ],
+            "postReq": {
+                "inlineScripts": [
+                    {
+                        "script": [
+                            "",
+                            "var jsonData = JSON.parse(responseBody);",
+                            "postman.setGlobalVariable(\"Package_ID\", jsonData.package_id);",
+                            ""
+                        ]
+                    }
+                ]
+            }
+        },
+        {
+            "_id": "58fb9c01-a54e-4634-b452-85fd3adffad1",
+            "colId": "a449cd67-bc83-484a-b079-a71f96564751",
+            "containerId": "",
+            "name": "Add Users to Workflow",
+            "url": "{{url}}/v4/packages/{{pid}}/workflow/users",
+            "method": "POST",
+            "sortNum": 50000,
+            "created": "2024-11-05T14:12:00.334Z",
+            "modified": "2024-11-05T14:12:00.334Z",
+            "headers": [
+                {
+                    "name": "Authorization",
+                    "value": "Bearer {{scope_user_token}}",
+                    "isDisabled": true
+                },
+                {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                },
+                {
+                    "name": "Accept",
+                    "value": "application/json"
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "[\t\n\t{\n\t\t\"user_email\": \"mark.lemmens@vlaanderen.be\",\n        \"user_name\": \"Mark Lemmens\",\n        \"signing_order\": 1\n\t},\n    {\n\t\t\"user_email\": \"arnoud.sauwen@vlaanderen.be\",\n        \"user_name\": \"Arnoud Sauwen\",\n        \"signing_order\": 2\n\t}\n]\n",
+                "form": []
+            },
+            "auth": {
+                "type": "bearer",
+                "bearer": "{{btoken}}"
+            },
+            "tests": []
+        },
+        {
+            "_id": "8a12f7e7-1bee-4cbf-917e-3fed2c816628",
+            "colId": "a449cd67-bc83-484a-b079-a71f96564751",
+            "containerId": "",
+            "name": "AutoPlace Fields_U1",
+            "url": "{{url}}/v4/packages/{{pid}}/documents/{{did}}/fields/autoplace",
+            "method": "POST",
+            "sortNum": 60000,
+            "created": "2024-11-05T14:12:00.335Z",
+            "modified": "2024-11-05T14:12:00.335Z",
+            "headers": [
+                {
+                    "name": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "isDisabled": true
+                },
+                {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                },
+                {
+                    "name": "Accept",
+                    "value": "application/json"
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "{\n\t\"search_text\": \"Handtekening1\",\n\t\"order\": 1,\n\t\"field_type\": \"SIGNATURE\",\n    \"level_of_assurance\":[\"QUALIFIED_ELECTRONIC_SIGNATURE\"],\n    \"placement\": \"BOTTOM\",\n    \"dimensions\": {\n        \"x\": 150,\n        \"y\": 150,\n        \"width\": 40,\n        \"height\": 40\n    }\n}",
+                "form": []
+            },
+            "auth": {
+                "type": "bearer",
+                "bearer": "{{btoken}}"
+            },
+            "tests": []
+        },
+        {
+            "_id": "8a22ee44-d05c-4786-a81a-118b8266ffab",
+            "colId": "a449cd67-bc83-484a-b079-a71f96564751",
+            "containerId": "",
+            "name": "AutoPlace Fields_U2",
+            "url": "{{url}}/v4/packages/{{pid}}/documents/{{did}}/fields/autoplace",
+            "method": "POST",
+            "sortNum": 70000,
+            "created": "2024-11-05T14:12:00.336Z",
+            "modified": "2024-11-05T14:12:00.336Z",
+            "headers": [
+                {
+                    "name": "Authorization",
+                    "value": "Bearer {{token}}",
+                    "isDisabled": true
+                },
+                {
+                    "name": "Content-Type",
+                    "value": "application/json"
+                },
+                {
+                    "name": "Accept",
+                    "value": "application/json"
+                }
+            ],
+            "params": [],
+            "body": {
+                "type": "json",
+                "raw": "{\n\t\"search_text\": \"Handtekening2\",\n\t\"order\": 2,\n\t\"field_type\": \"SIGNATURE\",\n    \"level_of_assurance\":[\"QUALIFIED_ELECTRONIC_SIGNATURE\"],\n    \"placement\": \"BOTTOM\",\n    \"dimensions\": {\n        \"x\": 150,\n        \"y\": 150,\n        \"width\": 100,\n        \"height\": 40\n    }\n}",
+                "form": []
+            },
+            "auth": {
+                "type": "bearer",
+                "bearer": "{{btoken}}"
+            },
+            "tests": []
+        },
+        {
+            "_id": "a0fb69ee-ef09-4eca-94a0-da2f40d6f46d",
+            "colId": "a449cd67-bc83-484a-b079-a71f96564751",
+            "containerId": "",
+            "name": "Share Document Package",
+            "url": "{{url}}/v4/packages/{{pid}}/workflow",
+            "method": "POST",
+            "sortNum": 80000,
+            "created": "2024-11-05T14:12:00.337Z",
+            "modified": "2024-11-05T14:12:00.337Z",
+            "headers": [
+                {
+                    "name": "Content-Type",
+                    "value": "application/x-www-form-urlencoded"
+                },
+                {
+                    "name": "Authorization",
+                    "value": "Bearer {{scope_user_token}}",
+                    "isDisabled": true
+                }
+            ],
+            "params": [],
+            "auth": {
+                "type": "bearer",
+                "bearer": "{{btoken}}"
+            },
+            "tests": []
+        },
+        {
+            "_id": "40c30359-8c35-49ae-bd6d-dbb8b6610f5c",
+            "colId": "a449cd67-bc83-484a-b079-a71f96564751",
+            "containerId": "",
+            "name": "Upload Doc",
+            "url": "{{url}}/v4/packages/{{pid}}/documents",
+            "method": "POST",
+            "sortNum": 35000,
+            "created": "2024-11-05T14:12:00.338Z",
+            "modified": "2024-11-05T14:13:55.054Z",
+            "headers": [
+                {
+                    "name": "Accept",
+                    "value": "application/json"
+                },
+                {
+                    "name": "Content-Type",
+                    "value": "application/octet-stream"
+                },
+                {
+                    "name": "x-file-name",
+                    "value": "testdoc2.txt"
+                },
+                {
+                    "name": "x-source",
+                    "value": "API"
+                },
+                {
+                    "name": "x-folder",
+                    "value": "BINGBONG",
+                    "isDisabled": true
+                }
+            ],
+            "body": {
+                "type": "binary",
+                "raw": "",
+                "form": [],
+                "binary": "../../../../DHM/postman/testdoc2.txt"
+            },
+            "auth": {
+                "type": "bearer",
+                "bearer": "{{btoken}}"
+            },
+            "tests": [
+                {
+                    "type": "set-env-var",
+                    "custom": "json.documentid",
+                    "action": "setto",
+                    "value": "{{did}}"
+                }
+            ]
+        }
+    ]
+}
