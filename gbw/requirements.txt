@@ -1,0 +1,10 @@
+PySimpleGUI
+subprocess
+pillow
+qrcode
+os
+tkinter
+time
+threading
+playsound
+flask
