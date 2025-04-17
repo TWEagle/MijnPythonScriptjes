@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>Afdelingen - QR Generator</title>
+</head>
+<body style="font-family: sans-serif; max-width: 600px; margin: auto;">
+    <h1>Kies een afdeling</h1>
+
+    {% if afdelingen %}
+        {% for afd in afdelingen %}
+            <form action="{{ url_for('afdeling', afdeling=afd) }}" method="get" style="margin-bottom: 10px;">
+                <button type="submit" style="width: 100%; padding: 10px;">{{ afd }}</button>
+            </form>
+        {% endfor %}
+    {% else %}
+        <p>Er zijn nog geen afdelingen aangemaakt.</p>
+    {% endif %}
+
+    <hr>
+    <form action="{{ url_for('admin_login') }}" method="get" style="margin-top: 30px;">
+        <button type="submit" style="width: 100%; padding: 10px; background-color: #333; color: white;">🔐 Administratie</button>
+    </form>
+</body>
+</html>

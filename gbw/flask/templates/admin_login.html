@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin login</title>
+</head>
+<body style="font-family: sans-serif; max-width: 400px; margin: auto;">
+    <h2>Admin login</h2>
+    {% if fout %}<p style="color: red;">{{ fout }}</p>{% endif %}
+    <form method="POST">
+        <label>Wachtwoord:<br><input type="password" name="wachtwoord" required></label><br><br>
+        <button type="submit">Login</button>
+    </form>
+    <br>
+    <a href="{{ url_for('home') }}">← Terug naar start</a>
+</body>
+</html>

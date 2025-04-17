@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin - Afdelingen beheren</title>
+</head>
+<body style="font-family: sans-serif; max-width: 600px; margin: auto;">
+    <h2>Nieuwe afdeling aanmaken</h2>
+
+    {% if melding %}
+        <p style="color: green;">{{ melding }}</p>
+    {% endif %}
+
+    <form method="POST">
+        <label>Afdelingsnaam:<br>
+            <input type="text" name="nieuwe_afdeling" required>
+        </label><br><br>
+        <button type="submit">Aanmaken</button>
+    </form>
+
+    <hr>
+    <h3>Bestaande afdelingen</h3>
+    <ul>
+        {% for afd in afdelingen %}
+            <li>
+                {{ afd }}
+                &nbsp;|&nbsp;
+                <a href="{{ url_for('reset_wachtwoord', afdeling=afd) }}"
+                   onclick="return confirm('Wachtwoord van {{ afd }} resetten?')">
+                   🔁 Reset wachtwoord
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+
+    <br>
+    <a href="{{ url_for('home') }}">← Terug naar startpagina</a> |
+    <a href="{{ url_for('admin_logout') }}">Afmelden</a>
+</body>
+</html>
