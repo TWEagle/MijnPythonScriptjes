@@ -3,7 +3,7 @@ name: Auto-Unzip Bundles
 on:
   push:   # trigger op elke push naar de repo
 
-dobs:
+jobs:
   unzip:
     runs-on: ubuntu-latest
     steps:
