@@ -14,15 +14,13 @@ jobs:
 
       - name: Unzip uploaded bundle
         run: |
-          for f in DCBaasAPY/Dev/*.zip; do
-            unzip -o "$f" -d DCBaaSAPI/Dev/
-            rm "$f"
-          done
+          unzip -o DCBaasAPY/Dev/*.sip -d DCBaaSAPI/Dev/
+          rm DCBaasAPY/Dev/*.sip
 
       - name: Commit unzipped files
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]+users@noreply.github.com"
-          git add DCBaasAPY/Dev/
-          git commit -m "Automatisch uitgepakt bundle naar DCBaaSAPI/Dev"
+          git add DCBaasAPI/Dev/
+          git commit -m "Automatisch uitgepakt bundle naar DCBaasAPY/Dev"
           git push
