@@ -1,0 +1,34 @@
+name: Auto-Unzip Bundles
+
+on:
+  push:   # trigger op elke push naar de repo
+
+dobs:
+  unzip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Find and unzip all zips
+        run: |
+          shopt -s globstar
+          found=false
+          for f in **/*.zip; do
+            if [ -f "$f" ]; then
+              echo "🗩 Unzipping $f"
+              unzip -o "$f" -d "$(dirname $f)"
+              rm "$f"
+              found=true
+          fi
+          done
+          if [ "$found" = false ]; then
+            echo "� No zip files found"
+          fi
+      - name: Commit unzipped files
+        run: |
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]+users@noreply.github.com"
+          git add .
+          git commit -m "Automatisch uitgepakt bundles"
+          git push
