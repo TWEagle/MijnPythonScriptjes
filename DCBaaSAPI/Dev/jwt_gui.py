@@ -42,8 +42,8 @@ class JWTApp(ttk.Window):
     def __init__(self):
         super().__init__(themename="darkly")  # andere opties: "cyborg", "superhero", "solar"
         self.title(APP_TITLE)
-        self.geometry("940x860")
-        self.minsize(860, 720)
+        self.geometry("980x920")
+        self.minsize(860, 800)
 
         # ==== State ====
         self.key_path = tk.StringVar()
@@ -185,6 +185,7 @@ class JWTApp(ttk.Window):
         right_frame = ttk.Frame(frm_actions)
         right_frame.pack(side="right", padx=8)
         ttk.Button(right_frame, text="Toepassingen", command=self.open_application_gui).pack(side="left", padx=4)
+        ttk.Button(frm_actions, text="Certificates GUI", command=self.open_certificates_gui, bootstyle="secondary").pack(side="right", padx=4)
         ttk.Button(right_frame, text="Sluiten", command=self.close_and_cleanup, bootstyle="danger").pack(side="left", padx=4)
 
 
@@ -503,6 +504,36 @@ class JWTApp(ttk.Window):
             return
         Path(path).write_text(content, encoding="utf-8")
         messagebox.showinfo("Opgeslagen", f"Output opgeslagen naar:\n{path}")
+    
+    def open_certificates_gui(self):
+        base_url = self.base_url.get().strip()
+        if not base_url:
+            messagebox.showwarning("Ontbrekende {{url}}", "Vul eerst de centrale Base URL ({{url}}) in.")
+            return
+
+        if not self.last_access_token:
+            messagebox.showwarning("Geen access token", "Vraag eerst een access_token op.")
+            return
+
+        cert_gui_path = Path(__file__).with_name("certificates_gui.py")
+        if not cert_gui_path.exists():
+            messagebox.showerror("Bestand ontbreekt", f"certificates_gui.py niet gevonden in:\n{cert_gui_path.parent}")
+            return
+
+        try:
+            cmd = [
+                sys.executable,
+                str(cert_gui_path),
+                "--token", self.last_access_token,
+                "--base-url", base_url,
+            ]
+            print("[DEBUG] Opening certificates_gui.py with token (first 50 chars):",
+                (self.last_access_token or "")[:50], "...")
+            subprocess.Popen(cmd)
+
+        except Exception as e:
+            messagebox.showerror("Kon Certificates GUI niet openen", repr(e))
+
 
 
 if __name__ == "__main__":
