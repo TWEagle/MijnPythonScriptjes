@@ -1,0 +1,10 @@
+API Key
+
+PMAK-691f13669a6fd8000137eb20-c0aec80c5d2727bc6fddfd121bd8aae346
+
+Environment ID:
+47351562-7ec36014-7175-4612-a933-7c8c14fa4a25
+
+Workspace ID
+
+DCBaaS~f6ff56aa-cbd3-4972-8d9c-b94b9199cdc4
