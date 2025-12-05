@@ -18,7 +18,7 @@ Belangrijk:
 """
 
 from __future__ import annotations
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 import cynit_theme
 
@@ -32,23 +32,6 @@ def common_css(settings: dict) -> str:
     - footer: onderste balk met copyright
     - wafelmenu: links boven (▦)
     - hamburger-menu: rechts boven (☰), vooral gebruikt voor exports in cert_viewer
-
-    Waar pas je WAT aan?
-
-    * Algemene kleuren (achtergrond, tekst, titel, button):
-      -> in settings.json (per profiel) onder "colors"
-         - background
-         - general_fg
-         - title
-         - button_bg
-         - button_fg
-
-    * Font + logo-hoogte:
-      -> in settings.json onder "ui"
-         - logo_max_height (pixels)
-
-    * Layout-details die in ALLE pagina's hetzelfde moeten zijn:
-      -> HIER in deze functie (bv. marges, padding, border-stijl, box-shadow).
     """
     colors = settings["colors"]
     ui = settings["ui"]
@@ -75,7 +58,7 @@ def common_css(settings: dict) -> str:
       align-items: center;
       justify-content: space-between;
       padding: 8px 16px;
-      background: #111111;           /* algemene topbar background */
+      background: #111111;
       border-bottom: 1px solid #333333;
     }}
     .topbar-left {{
@@ -89,7 +72,7 @@ def common_css(settings: dict) -> str:
       gap: 10px;
     }}
 
-    /* Logo in de topbar (komt van /logo.png) */
+    /* Logo in de topbar */
     .logo {{
       max-height: {logo_h}px;
     }}
@@ -97,7 +80,7 @@ def common_css(settings: dict) -> str:
     /* Inhoudsgebied onder de topbar */
     .page {{
       padding: 20px;
-      min-height: calc(100vh - 120px);  /* zodat footer netjes onderaan blijft */
+      min-height: calc(100vh - 120px);
     }}
 
     /* Standaard kopteksten */
@@ -123,7 +106,6 @@ def common_css(settings: dict) -> str:
       color: {FG};
     }}
 
-    /* Buttons (globale stijl – voor extra varianten kun je aparte klassen maken) */
     button {{
       background: {BTN_BG};
       color: {BTN_FG};
@@ -138,7 +120,7 @@ def common_css(settings: dict) -> str:
       background: #222222;
     }}
 
-    /* === Wafelmenu (modules) links boven === */
+    /* === Wafelmenu links boven === */
     .waffle-wrapper {{
       position: relative;
       display: inline-block;
@@ -156,7 +138,7 @@ def common_css(settings: dict) -> str:
       margin-right: 8px;
     }}
     .waffle-dropdown {{
-      display: none;              /* wordt via JS op 'block' gezet */
+      display: none;
       position: absolute;
       top: 30px;
       left: 0;
@@ -172,13 +154,13 @@ def common_css(settings: dict) -> str:
       padding: 6px 10px;
       font-size: 0.9em;
       white-space: nowrap;
+      text-decoration: none;
     }}
     .waffle-dropdown a:hover {{
       background: #222;
     }}
 
-    /* === Hamburger menu rechts (exports, opties, ...) ===
-       LET OP: tools hoeven dit niet te gebruiken, maar cert_viewer wel. */
+    /* === Hamburger menu rechts (exports, opties, ...) === */
     .hamburger-wrapper {{
       position: relative;
       display: inline-block;
@@ -195,7 +177,7 @@ def common_css(settings: dict) -> str:
       font-size: 16px;
     }}
     .hamburger-dropdown {{
-      display: none;             /* wordt via JS op 'block' gezet */
+      display: none;
       position: absolute;
       top: 30px;
       right: 0;
@@ -211,6 +193,7 @@ def common_css(settings: dict) -> str:
       padding: 6px 10px;
       font-size: 0.9em;
       white-space: nowrap;
+      text-decoration: none;
     }}
     .hamburger-dropdown a:hover {{
       background: #222;
@@ -220,45 +203,42 @@ def common_css(settings: dict) -> str:
 
 def header_html(
     settings: dict,
-    tools=None,
+    tools: Optional[List[Dict[str, Any]]] = None,
     title: str = "CyNiT Tools",
     right_html: str = "",
 ) -> str:
     """
     Genereert de HTML voor de topbar (bovenbalk).
 
-    Dit bevat:
-    - links:
-        - wafel-icoon (▦)
-        - dropdown met alle tools (indien 'tools' lijst is meegegeven)
-        - link naar hub home
-        - link "Reload app" (herstart)
-        - logo dat linkt naar "/"
-        - titeltekst (bv. "CyNiT Tools" of "CyNiT Cert Viewer")
-    - rechts:
-        - "right_html" (vrije zone: bv. profielselector of hamburger export-menu)
-
-    Waar aanpassen?
-    - Tekst van de titel  -> via de 'title'-parameter (in ctools.py / cert_viewer.py)
-    - Extra knoppen rechts -> via 'right_html' (HTML-string)
-    - De structuur van de wafel -> hier in de template.
+    We bouwen de wafel-links volledig in Python (NIET met Jinja),
+    zodat de string direct in andere templates ingevoegd kan worden.
     """
+    # logo-pad uit settings, fallback naar 'logo.png'
+    paths = settings.get("paths", {})
+    logo_src = paths.get("logo", "logo.png")
+
+    # wafel-links genereren
+    links_html = ""
+    if tools:
+        for t in tools:
+            web_path = t.get("web_path")
+            if not web_path:
+                continue
+            name = t.get("name") or t.get("id") or "(tool)"
+            links_html += f'<a href="{web_path}">{name}</a>\n'
+
     return f"""
   <div class="topbar">
     <div class="topbar-left">
       <div class="waffle-wrapper">
         <div class="waffle-icon" onclick="toggleWaffle()">▦</div>
         <div id="waffle-menu" class="waffle-dropdown">
-          {{% if tools %}}
-            {{% for t in tools if t.get('web_path') %}}
-              <a href="{{{{ t.web_path }}}}">{{{{ t.name }}}}</a>
-            {{% endfor %}}
-          {{% endif %}}
+          {links_html}
           <a href="/">🏠 Hub home</a>
           <a href="#" onclick="restartApp(); return false;">🔄 Reload app</a>
         </div>
       </div>
-      <a href="/"><img src="/logo.png" alt="CyNiT Logo" class="logo"></a>
+      <a href="/"><img src="{logo_src}" alt="CyNiT Logo" class="logo"></a>
       <span>{title}</span>
     </div>
     <div class="topbar-right">
@@ -269,18 +249,6 @@ def header_html(
 
 
 def footer_html() -> str:
-    """
-    Standaard footer voor alle pagina's.
-
-    Wil je hier ooit bv. een versie-nummer, link naar documentatie,
-    of een korte tagline bijzetten, dan kan dat hier.
-
-    Wordt onderaan elke pagina geplaatst:
-      body
-        header
-        <div class="page">...</div>
-        footer
-    """
     return """
   <div class="footer">
     © CyNiT 2024 - 2026
@@ -289,20 +257,6 @@ def footer_html() -> str:
 
 
 def common_js() -> str:
-    """
-    Kleine JS helper-functies die in (bijna) elke pagina gebruikt kunnen worden:
-
-    - toggleWaffle():
-        toont/verbergt het wafel-menu (modules lijst).
-        Gebruikt door de onclick van de wafel-icon-div.
-
-    - restartApp():
-        doet een fetch naar /restart (die in ctools.py is gedefinieerd),
-        wacht even, en navigeert dan terug naar "/".
-
-    Als je later meer "globale" JS wilt (bvb dark/light switch,
-    of een globale toast/alert functie), kun je die hier toevoegen.
-    """
     return """
     function toggleWaffle() {
       var el = document.getElementById('waffle-menu');

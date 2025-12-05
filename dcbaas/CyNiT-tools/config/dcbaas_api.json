@@ -1,0 +1,24 @@
+{
+  "default_env": "PROD",
+
+  "environments": {
+    "DEV": {
+      "label": "DCBaaS DEV",
+      "external_api_base": "https://extapi.dcb-dev.vlaanderen.be",
+      "access_token": "",
+      "token_file": "C:/Users/lemmenmf/OneDrive - Vlaamse overheid - Office 365/DCBaaS/API/dev/access_token.txt"
+    },
+    "TI": {
+      "label": "DCBaaS TI",
+      "external_api_base": "https://extapi.dcb-ti.vlaanderen.be",
+      "access_token": "",
+      "token_file": "C:/Users/lemmenmf/OneDrive - Vlaamse overheid - Office 365/DCBaaS/API/ti/access_token.txt"
+    },
+    "PROD": {
+      "label": "DCBaaS PROD",
+      "external_api_base": "https://extapi.dcb.vlaanderen.be",
+      "access_token": "",
+      "token_file": "C:/Users/lemmenmf/OneDrive - Vlaamse overheid - Office 365/DCBaaS/API/prd/access_token.txt"
+    }
+  }
+}

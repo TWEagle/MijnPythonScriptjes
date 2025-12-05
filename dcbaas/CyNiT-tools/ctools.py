@@ -24,22 +24,43 @@ import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from flask import Flask, render_template_string, request, redirect, url_for
+from flask import Flask, render_template_string, request, redirect, url_for, send_from_directory
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
 
 import cynit_theme
 import cynit_layout
 import cert_viewer
 import voica1
 import config_editor
+import dcb_org_export
 
 
 BASE_DIR = Path(__file__).parent
 
 # ===== SETTINGS & TOOLS LADEN =====
 
-SETTINGS: Dict[str, Any] = cynit_theme.load_settings()
-TOOLS_CFG: Dict[str, Any] = cynit_theme.load_tools()
-TOOLS: List[Dict[str, Any]] = TOOLS_CFG.get("tools", [])
+SETTINGS: Dict[str, Any] = {}
+TOOLS_CFG: Dict[str, Any] = {}
+TOOLS: List[Dict[str, Any]] = []
+
+
+def reload_config() -> None:
+    """
+    Herlaad settings.json en tools.json.
+    Wordt gebruikt bij startup én door /restart.
+    """
+    global SETTINGS, TOOLS_CFG, TOOLS
+    print(">>> RELOADING CONFIG")
+    SETTINGS = cynit_theme.load_settings()
+    TOOLS_CFG = cynit_theme.load_tools()
+    TOOLS = TOOLS_CFG.get("tools", [])
+
+
+# eerste keer laden bij start
+reload_config()
+
 
 
 # ===== FLASK-APP =====
@@ -57,11 +78,6 @@ HOME_TEMPLATE = """
   <title>CyNiT Tools</title>
   <style>
   {{ base_css|safe }}
-
-  /* verstop eventueel kapotte header-afbeelding uit cynit_layout */
-  img[alt="CyNiT Logo"] {
-    display: none;
-  }
 
   /* === CyNiT Tools homepage grid === */
   .tools-section {
@@ -178,10 +194,6 @@ HOME_TEMPLATE = """
   {{ header|safe }}
   <div class="page">
     <div class="page-header">
-      {% if logo_url %}
-        <img src="{{ logo_url }}" alt="CyNiT Logo Local"
-             style="max-height: {{ ui.logo_max_height }}px;">
-      {% endif %}
       <div>
         <h1>Welkom in CyNiT Tools</h1>
         <p class="muted">
@@ -283,12 +295,20 @@ def _start_gui_tool(tool: Dict[str, Any]) -> None:
 
 # ===== ROUTES =====
 
+@app.route("/restart")
+def restart():
+    """
+    Wordt aangeroepen door de 'Reload app' knop in de topbar.
+    Herlaadt settings.json en tools.json in geheugen.
+    """
+    reload_config()
+    return "OK"
+  
 @app.route("/", methods=["GET"])
 def index():
     colors = SETTINGS.get("colors", {})
     ui = SETTINGS.get("ui", {})
 
-    # aantal kolommen uit settings.json (fallback 3)
     home_columns = SETTINGS.get("home_columns", 3)
     try:
         home_columns = int(home_columns)
@@ -299,16 +319,9 @@ def index():
     except Exception:
         home_columns = 3
 
-    # logo-url zelf resolven (relatief naar static/)
+    # logo-url gewoon hetzelfde als in header_html:
     paths = SETTINGS.get("paths", {})
-    logo_path = paths.get("logo", "")
-    if logo_path:
-        if logo_path.startswith("/"):
-            logo_url = logo_path
-        else:
-            logo_url = url_for("static", filename=logo_path)
-    else:
-        logo_url = ""
+    logo_url = paths.get("logo", "logo.png")  # => "logo.png" → /logo.png
 
     base_css = cynit_layout.common_css(SETTINGS)
     common_js = cynit_layout.common_js()
@@ -333,9 +346,12 @@ def index():
         logo_url=logo_url,
     )
 
-
 from flask import url_for  # onderaan zodat het boven index() beschikbaar is
 
+@app.route("/logo.png")
+def logo_png():
+    # Serveert het logo naast ctools.py
+    return send_from_directory(str(BASE_DIR), "logo.png")
 
 @app.route("/start/", methods=["POST"])
 def start_tool():
@@ -349,26 +365,57 @@ def start_tool():
 
     return redirect(url_for("index"))
 
+@app.route("/debug/routes")
+def debug_routes():
+    output = ["<h1>Registered Routes</h1><ul>"]
+    for rule in app.url_map.iter_rules():
+        output.append(f"<li>{rule}</li>")
+    output.append("</ul>")
+    return "\n".join(output)
 
 # ===== EXTERNE TOOL-ROUTES REGISTREREN =====
 
 def register_external_routes(app: Flask) -> None:
-    """Registreer routes van cert_viewer, voica1 en config_editor."""
-    cert_viewer.register_web_routes(app, SETTINGS, TOOLS)
+    print(">>> REGISTERING ROUTES")
 
+    try:
+        print(" - Registering CERT VIEWER...")
+        cert_viewer.register_web_routes(app, SETTINGS, TOOLS)
+        print("   OK: cert_viewer routes registered")
+    except Exception as exc:
+        print("   ERROR: cert_viewer.register_web_routes FAILED:")
+        print("   -->", exc)
+
+    print(" - Loading voica1.json...")
     voica_cfg_path = BASE_DIR / "config" / "voica1.json"
-    if voica_cfg_path.exists():
-        try:
-            voica_cfg = json.loads(voica_cfg_path.read_text(encoding="utf-8"))
-        except Exception as exc:
-            print(f"[WARN] Kon voica1-config niet lezen: {exc}")
-            voica_cfg = {}
-    else:
+    try:
+        voica_cfg = json.loads(voica_cfg_path.read_text(encoding="utf-8"))
+        print("   OK: voica1.json loaded")
+    except Exception as exc:
+        print("   ERROR: Could not load voica1.json:", exc)
         voica_cfg = {}
 
-    voica1.register_web_routes(app, SETTINGS, TOOLS, voica_cfg)
-    config_editor.register_web_routes(app, SETTINGS, TOOLS)
+    try:
+        print(" - Registering VOICA1...")
+        voica1.register_web_routes(app, SETTINGS, TOOLS, voica_cfg)
+        print("   OK: voica1 routes registered")
+    except Exception as exc:
+        print("   ERROR: voica1.register_web_routes FAILED:", exc)
 
+    try:
+        print(" - Registering CONFIG EDITOR...")
+        config_editor.register_web_routes(app, SETTINGS, TOOLS)
+        print("   OK: config editor registered")
+    except Exception as exc:
+        print("   ERROR: config_editor.register_web_routes FAILED:", exc)
+
+    try:
+        print(" - Registering DCBAAS ORG EXPORT...")
+        dcb_org_export.register_web_routes(app, SETTINGS, TOOLS)
+        print("   OK: dcbaas-org-export routes registered")
+    except Exception as exc:
+        print("   ERROR: dcb_org_export.register_web_routes FAILED:")
+        print("   -->", exc)
 
 # ===== MAIN =====
 

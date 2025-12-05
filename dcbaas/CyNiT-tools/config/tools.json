@@ -3,11 +3,10 @@
     {
       "id": "certviewer",
       "name": "Certificate / CSR Viewer",
-      "type": "web+gui",
+      "type": "web",
       "script": "cert_viewer.py",
-      "web_path": "/cert-viewer",
+      "web_path": "/cert",
       "icon_web": "📜",
-      "icon_gui": "🧪",
       "description": "Decode X.509 certificaten en CSRs, bekijk subject/issuer/properties en exporteer naar JSON, CSV, XLSX, HTML, MD."
     },
     {
@@ -36,6 +35,15 @@
       "script": "config_editor.py",
       "icon_web": "⚙️",
       "description": "Bewerk settings.json, VOICA1-config en templates centraal via CyNiT Tools."
+    },
+    {
+      "id": "dcbaas-org-export",
+      "name": "DCBaaS org-export",
+      "type": "web",
+      "web_path": "/dcbaas-org-export",
+      "script": "dcb_org_export.py",
+      "icon_web": "📊",
+      "description": "Zoek alle certificaten per organisatie-code en exporteer naar Excel."
     }
   ]
 }

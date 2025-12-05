@@ -1,197 +1,267 @@
 #!/usr/bin/env python3
 """
-Eenvoudige Config & Theme Editor voor CyNiT Tools.
+config_editor.py
 
-Bewerkt:
-- settings.json
+Eenvoudige centrale editor voor:
+- config/settings.json
+- config/tools.json
+- config/exports.json
+- config/helpfiles.json
 - config/voica1.json
 - config/voica1_messages.md
+... en alle andere .json/.md/.txt in de config-map.
 """
 
-from pathlib import Path
-import json
+from __future__ import annotations
 
-from flask import request, render_template_string
+import json
+from pathlib import Path
+from typing import List, Dict, Any
+
+from flask import Blueprint, render_template_string, request, redirect, url_for, flash
+
 import cynit_layout
+import cynit_theme
 
 BASE_DIR = Path(__file__).parent
+CONFIG_DIR = BASE_DIR / "config"
 
-EDITABLE_FILES = {
-    "settings.json": BASE_DIR / "settings.json",
-    "VOICA1 config (config/voica1.json)": BASE_DIR / "config" / "voica1.json",
-    "VOICA1 messages (config/voica1_messages.md)": BASE_DIR / "config" / "voica1_messages.md",
-}
+bp = Blueprint("config_editor", __name__)
 
-
-def _detect_lang(path: Path) -> str:
-    ext = path.suffix.lower()
-    if ext == ".json":
-        return "JSON"
-    if ext in (".md", ".markdown"):
-        return "Markdown"
-    return "Tekst"
+SETTINGS = cynit_theme.load_settings()
+TOOLS_CFG = cynit_theme.load_tools()
+TOOLS = TOOLS_CFG.get("tools", [])
 
 
-def register_web_routes(app, settings, tools=None):
-    base_css = cynit_layout.common_css(settings)
-    common_js = cynit_layout.common_js()
+TEMPLATE = """
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Config & Theme Editor</title>
+  <style>
+    {{ base_css|safe }}
 
-    colors_cfg = settings.get("colors", {})
-    accent_bg = colors_cfg.get("button_bg", "#facc15")
-    accent_fg = colors_cfg.get("button_fg", "#000000")
+    .config-select-row {
+      margin-bottom: 12px;
+    }
 
-    extra_css = f"""
-.card {{
-  max-width: 1000px;
-  margin: 0 auto 20px auto;
-  background: #1e1e1e;
-  padding: 20px;
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-}}
-label {{ display:block; margin-top:12px; font-weight:600; }}
-select, textarea {{
-  width:100%; padding:8px 10px;
-  border-radius:8px; border:1px solid #444;
-  background:#111; color:#eee;
-}}
-textarea {{ min-height:420px; font-family:Consolas,monospace; }}
-.btn {{
-  display:inline-block;
-  margin-top:16px;
-  padding:8px 16px;
-  border-radius:999px;
-  border:none;
-  background: {accent_bg};
-  color: {accent_fg};
-  font-weight:700;
-  cursor:pointer;
-}}
-.btn:hover {{
-  filter: brightness(1.05);
-}}
-.badge {{
-  display:inline-block;
-  padding:2px 10px;
-  border-radius:999px;
-  background:#222;
-  border:1px solid {accent_bg};
-  color:{accent_bg};
-  font-size:0.8em;
-  margin-left:8px;
-}}
-.muted {{ color:#aaa; font-size:0.9em; }}
-.flash-ok {{ background:#064e3b; color:#bbf7d0;
-            padding:8px 12px; border-radius:8px; margin-bottom:8px; }}
-.flash-err {{ background:#7f1d1d; color:#fecaca;
-             padding:8px 12px; border-radius:8px; margin-bottom:8px; }}
+    select.config-select {
+      width: 100%;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #333;
+      background: #111;
+      color: {{ colors.general_fg }};
+      font-family: {{ ui.font_main }};
+    }
+
+    textarea.config-editor {
+      width: 100%;
+      min-height: 420px;
+      resize: vertical;
+      padding: 10px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #050505;
+      color: {{ colors.general_fg }};
+      font-family: Consolas, monospace;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      box-sizing: border-box;
+    }
+
+    .help-text {
+      margin-top: 8px;
+      font-size: 0.85rem;
+      color: #999;
+    }
+
+    .flash {
+      margin-bottom: 10px;
+      padding: 8px 12px;
+      border-radius: 6px;
+      background: #112211;
+      border: 1px solid #228822;
+      color: #88ff88;
+      font-size: 0.85rem;
+    }
+
+    .flash-error {
+      background: #221111;
+      border-color: #aa3333;
+      color: #ff8888;
+    }
+  </style>
+  <script>
+    {{ common_js|safe }}
+  </script>
+</head>
+<body>
+  {{ header|safe }}
+  <div class="page">
+    <h1>Config & Theme Editor</h1>
+    <p class="muted">
+      Pas centraal je settings, VOICA1-config en templates aan.
+    </p>
+
+    {% for msg, category in flashes %}
+      <div class="flash {% if category == 'error' %}flash-error{% endif %}">
+        {{ msg }}
+      </div>
+    {% endfor %}
+
+    <form method="post" action="{{ url_for('config_editor.edit') }}">
+      <div class="config-select-row">
+        <label for="filename"><strong>Kies bestand</strong></label><br>
+        <select id="filename" name="filename" class="config-select" onchange="this.form.submit()">
+          {% for f in files %}
+            <option value="{{ f.id }}" {% if f.id == current_file %}selected{% endif %}>
+              {{ f.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <textarea name="content" class="config-editor">{{ content }}</textarea>
+
+      <div class="help-text">
+        JSON-bestanden worden gevalideerd en mooi ingesprongen opgeslagen.
+        Markdown/tekst wordt rechtstreeks bewaard.
+      </div>
+
+      <div style="margin-top: 12px;">
+        <button type="submit" name="action" value="save" class="btn">
+          Opslaan
+        </button>
+      </div>
+    </form>
+  </div>
+  {{ footer|safe }}
+</body>
+</html>
 """
 
-    header = cynit_layout.header_html(
-        settings,
-        tools=tools,
-        title="CyNiT Config & Theme Editor",
+
+def _list_config_files() -> List[Dict[str, str]]:
+    files: List[Dict[str, str]] = []
+    if not CONFIG_DIR.exists():
+        return files
+
+    for p in sorted(CONFIG_DIR.iterdir()):
+        if not p.is_file():
+            continue
+        if p.suffix.lower() not in {".json", ".md", ".txt"}:
+            continue
+        files.append(
+            {
+                "id": p.name,
+                "label": f"{p.name} (config/{p.name})",
+            }
+        )
+
+    return files
+
+
+def _read_file(path: Path) -> str:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+    except Exception:
+        # fallback: binary-ish, maar we proberen toch
+        text = path.read_text(errors="ignore")
+
+    if path.suffix.lower() == ".json":
+        try:
+            data = json.loads(text)
+            return json.dumps(data, indent=2, ensure_ascii=False)
+        except Exception:
+            # is geen geldige JSON, toon dan raw zodat user het kan fixen
+            return text
+    else:
+        return text
+
+
+def _write_file(path: Path, content: str) -> str | None:
+    """
+    Schrijft content naar path.
+    Returnt None bij succes, of een foutboodschap (string) bij error.
+    """
+    if path.suffix.lower() == ".json":
+        try:
+            data = json.loads(content)
+        except Exception as exc:
+            return f"JSON is niet geldig: {exc}"
+        try:
+            pretty = json.dumps(data, indent=2, ensure_ascii=False)
+            path.write_text(pretty, encoding="utf-8")
+        except Exception as exc:
+            return f"Kon JSON niet opslaan: {exc}"
+    else:
+        try:
+            path.write_text(content, encoding="utf-8")
+        except Exception as exc:
+            return f"Kon bestand niet opslaan: {exc}"
+
+    return None
+
+
+@bp.route("/config-editor", methods=["GET", "POST"])
+def edit():
+    colors = SETTINGS.get("colors", {})
+    ui = SETTINGS.get("ui", {})
+    base_css = cynit_layout.common_css(SETTINGS)
+    common_js = cynit_layout.common_js()
+
+    header_html = cynit_layout.header_html(
+        SETTINGS,
+        tools=TOOLS,
+        title="Config & Theme Editor",
         right_html="",
     )
-    footer = cynit_layout.footer_html()
+    footer_html = cynit_layout.footer_html()
 
-    page_template = (
-        "<!doctype html>\n"
-        "<html lang='nl'>\n"
-        "<head>\n"
-        "  <meta charset='utf-8'>\n"
-        "  <title>CyNiT Config Editor</title>\n"
-        "  <style>\n"
-        f"{base_css}\n{extra_css}\n"
-        "  </style>\n"
-        "  <script>\n"
-        f"{common_js}\n"
-        "  </script>\n"
-        "</head>\n"
-        "<body>\n"
-        f"{header}\n"
-        "<div class='page'>\n"
-        "<div class='card'>\n"
-        "  <h1>Config & Theme Editor</h1>\n"
-        "  <p class='muted'>Pas centraal je settings, VOICA1-config en templates aan.</p>\n"
-        "  {% if msg_ok %}<div class='flash-ok'>{{ msg_ok }}</div>{% endif %}\n"
-        "  {% if msg_err %}<div class='flash-err'>{{ msg_err }}</div>{% endif %}\n"
-        "  <form method='get' action='{{ url_for(\"config_editor\") }}'>\n"
-        "    <label>Kies bestand</label>\n"
-        "    <select name='file_key' onchange='this.form.submit()'>\n"
-        "      {% for key in file_keys %}\n"
-        "      <option value='{{ key }}' {% if key == current_key %}selected{% endif %}>{{ key }}</option>\n"
-        "      {% endfor %}\n"
-        "    </select>\n"
-        "  </form>\n"
-        "  <form method='post' action='{{ url_for(\"config_editor\") }}'>\n"
-        "    <input type='hidden' name='file_key' value='{{ current_key }}'>\n"
-        "    <label>Inhoud van {{ current_key }} "
-        "<span class='badge'>{{ lang_label }}</span></label>\n"
-        "    <textarea name='content'>{{ content }}</textarea>\n"
-        "    <p class='muted'>"
-        "JSON-bestanden worden gevalideerd en mooi ingesprongen. "
-        "Markdown/tekst wordt rechtstreeks bewaard.</p>\n"
-        "    <button type='submit' class='btn'>Opslaan</button>\n"
-        "  </form>\n"
-        "</div>\n"
-        "</div>\n"
-        f"{footer}\n"
-        "</body>\n"
-        "</html>\n"
+    files = _list_config_files()
+    if not files:
+        # geen configmap of geen files
+        return "Geen config-bestanden gevonden in config/."
+
+    # bepaal current_file
+    if request.method == "POST":
+        current_file = request.form.get("filename") or files[0]["id"]
+    else:
+        current_file = request.args.get("filename") or files[0]["id"]
+
+    current_path = CONFIG_DIR / current_file
+    flashes: List[tuple[str, str]] = []
+
+    if request.method == "POST" and request.form.get("action") == "save":
+        content = request.form.get("content", "")
+        error = _write_file(current_path, content)
+        if error:
+            flashes.append((error, "error"))
+        else:
+            flashes.append((f"{current_file} opgeslagen.", "ok"))
+
+    # altijd opnieuw inlezen (zeker na save)
+    content = _read_file(current_path)
+
+    return render_template_string(
+        TEMPLATE,
+        base_css=base_css,
+        common_js=common_js,
+        header=header_html,
+        footer=footer_html,
+        colors=colors,
+        ui=ui,
+        files=files,
+        current_file=current_file,
+        content=content,
+        flashes=flashes,
     )
 
-    def _render(**ctx):
-        return render_template_string(page_template, tools=tools, **ctx)
 
-    @app.route("/config-editor", methods=["GET", "POST"])
-    def config_editor():
-        msg_ok = ""
-        msg_err = ""
-        file_keys = list(EDITABLE_FILES.keys())
-
-        if request.method == "POST":
-            file_key = request.form.get("file_key") or file_keys[0]
-            path = EDITABLE_FILES.get(file_key)
-            content = request.form.get("content") or ""
-            if not path:
-                msg_err = "Onbekend bestand."
-                current_key = file_key
-            else:
-                try:
-                    if path.suffix.lower() == ".json":
-                        # json validatie
-                        json.loads(content)
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(content, encoding="utf-8")
-                    msg_ok = f"{file_key} opgeslagen."
-                except Exception as e:
-                    msg_err = f"Fout bij opslaan: {e}"
-                current_key = file_key
-        else:
-            current_key = request.args.get("file_key") or file_keys[0]
-
-        path = EDITABLE_FILES.get(current_key)
-        if path and path.exists():
-            raw = path.read_text(encoding="utf-8")
-            lang_label = _detect_lang(path)
-            # JSON netjes indenten
-            if path.suffix.lower() == ".json":
-                try:
-                    raw_json = json.loads(raw)
-                    raw = json.dumps(raw_json, indent=2, ensure_ascii=False)
-                except Exception:
-                    pass
-            content = raw
-        else:
-            content = ""
-            lang_label = "Onbekend"
-
-        return _render(
-            file_keys=file_keys,
-            current_key=current_key,
-            content=content,
-            msg_ok=msg_ok,
-            msg_err=msg_err,
-            lang_label=lang_label,
-        )
+def register_web_routes(app, settings, tools):
+    # settings & tools worden al globaal geladen, maar we laten signatuur zo
+    app.register_blueprint(bp)
