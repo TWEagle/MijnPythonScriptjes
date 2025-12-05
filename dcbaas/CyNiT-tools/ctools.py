@@ -10,6 +10,7 @@ from flask import Flask, request, render_template_string, send_file
 
 import cynit_theme
 import cert_viewer
+import voica1
 
 # -------------------------------------------------------------------
 #  Basis setup
@@ -549,9 +550,23 @@ def logo_route():
     return send_file(str(cynit_theme.LOGO_PATH), mimetype="image/png")
 
 
-# Cert viewer web-routes in deze app plaatsen
+# Cert viewer web-routes
 cert_viewer.register_web_routes(app, settings, TOOLS)
+
+# VOICA1 config uit config/voica1.json
+voica1_cfg_path = Path(__file__).parent / "config" / "voica1.json"
+if voica1_cfg_path.exists():
+    with voica1_cfg_path.open(encoding="utf-8") as f:
+        voica_cfg = json.load(f)
+else:
+    voica_cfg = {}
+
+# VOICA1 web-routes
+voica1.register_web_routes(app, settings, TOOLS, voica_cfg)
 
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5000, debug=False)
+    # Als je liever alles op 5445 draait:
+    # app.run(host="127.0.0.1", port=5445, debug=False)
+
