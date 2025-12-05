@@ -28,9 +28,10 @@ KEY_SIZE_DEFAULT = 2048  # idem door voica_cfg["default_key_size"]
 CERT_EXTS = (".cer", ".crt", ".pem")
 
 
-# ===== HELPERS =====
+# ===== HELPER FUNCTIES =====
 
 class CommandError(Exception):
+    """Fout bij extern commando (openssl, ...)."""
     pass
 
 
@@ -281,32 +282,68 @@ def zip_pems(base_dir: Path, pem_files: List[Path], password: Optional[str]) -> 
     return zip_path
 
 
+# ===== TEMPLATE-HELPERS (voica1_messages.md) =====
+
+def load_message_block(path: Path, block_name: str) -> str:
+    """
+    Leest een block uit voica1_messages.md zoals:
+
+    [[CERTMAIL]]
+    ...
+    [[END]]
+    """
+    if not path.exists():
+        return ""
+
+    text = path.read_text(encoding="utf-8")
+    start_token = f"[[{block_name}]]"
+    end_token = "[[END]]"
+
+    if start_token not in text:
+        return ""
+
+    part = text.split(start_token, 1)[1]
+    part = part.split(end_token, 1)[0]
+
+    return part.strip()
+
+
+def render_template_text(template: str, devices: str, password: str) -> str:
+    """
+    Vervangt placeholders {{devices}} en {{password}}.
+    """
+    return (
+        template
+        .replace("{{devices}}", devices)
+        .replace("{{password}}", password)
+    )
+
+
 # ===== WEB-INTEGRATIE =====
 
 def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) -> None:
     """
     Registreert /voica1 en /voica1/process in een bestaande Flask-app.
-    Gebruikt cynit_layout header/footer/wafel/menu en kleuren uit settings.
     """
 
-    # --- VOICA1 defaults uit config/voica1.json of fallback ---
     if voica_cfg is None:
         voica_cfg = {}
+
+    # GLOBALS MOETEN EERST
+    global OPENSSL_BIN, PASS_LENGTH, KEY_SIZE_DEFAULT
 
     default_key_size = int(voica_cfg.get("default_key_size", KEY_SIZE_DEFAULT))
     default_pass_length = int(voica_cfg.get("pass_length", PASS_LENGTH))
     openssl_bin = voica_cfg.get("openssl_bin", OPENSSL_BIN)
 
-    # globals bijsturen zodat helpers ze ook gebruiken
-    global OPENSSL_BIN, PASS_LENGTH, KEY_SIZE_DEFAULT
     OPENSSL_BIN = openssl_bin
     PASS_LENGTH = default_pass_length
     KEY_SIZE_DEFAULT = default_key_size
 
     def compute_default_base_dir() -> str:
         """
-        Bouw standaard map op basis van root_base_dir uit voica_cfg:
-        root\YYYY\MM\D  (MM met leading zero, D zonder leading zero)
+        Bouwt standaard pad als:
+        root\\YYYY\\MM\\D
         """
         root = voica_cfg.get("root_base_dir") or voica_cfg.get("default_base_dir", "")
         if not root:
@@ -317,72 +354,82 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
         day = today.day
         return str(Path(root) / str(year) / month / str(day))
 
+    messages_path = Path(__file__).parent / "config" / "voica1_messages.md"
+
     base_css = cynit_layout.common_css(settings)
     common_js = cynit_layout.common_js()
 
-    extra_css = """
-.card {
-  max-width: 1000px;
-  margin: 0 auto 20px auto;
-  background: #1e1e1e;
-  padding: 20px;
-  border-radius: 16px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-}
-label { display:block; margin-top:12px; font-weight:600; }
-input[type=text], textarea, select {
-  width:100%; padding:8px 10px;
-  border-radius:8px; border:1px solid #444;
-  background:#111; color:#eee;
-}
-textarea { min-height:80px; font-family:monospace; }
-.btn {
-  display:inline-block;
-  margin-top:16px;
-  padding:8px 16px;
-  border-radius:999px;
-  border:none;
-  background: var(--accent-color, #facc15);
-  color: var(--accent-text-color, #000);
-  font-weight:700;
-  cursor:pointer;
-}
-.btn:hover {
-  filter: brightness(1.05);
-}
-.muted { color:#aaa; font-size:0.9em; }
-.flash { background:#7f1d1d; color:#fecaca;
-         padding:8px 12px; border-radius:8px; margin-bottom:8px; }
-.ok { color:#bbf7d0; }
-.err { color:#fecaca; }
-"""
+    # kleuren uit je theme-settings (settings.json → colors.button_bg / button_fg)
+    colors_cfg = settings.get("colors", {})
+    accent_bg = colors_cfg.get("button_bg", "#facc15")
+    accent_fg = colors_cfg.get("button_fg", "#000000")
 
+    extra_css = f"""
+    .card {{
+    max-width: 1000px;
+    margin: 0 auto 20px auto;
+    background: #1e1e1e;
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }}
+    label {{ display:block; margin-top:12px; font-weight:600; }}
+    input[type=text], textarea, select {{
+    width:100%; padding:8px 10px;
+    border-radius:8px; border:1px solid #444;
+    background:#111; color:#eee;
+    }}
+    textarea {{ min-height:80px; font-family:monospace; }}
+    .btn {{
+    display:inline-block;
+    margin-top:16px;
+    padding:8px 16px;
+    border-radius:999px;
+    border:none;
+    background: {accent_bg};
+    color: {accent_fg};
+    font-weight:700;
+    cursor:pointer;
+    }}
+    .btn:hover {{
+    filter: brightness(1.05);
+    }}
+    .muted {{ color:#aaa; font-size:0.9em; }}
+    .flash {{ background:#7f1d1d; color:#fecaca;
+            padding:8px 12px; border-radius:8px; margin-bottom:8px; }}
+    .ok {{ color:#bbf7d0; }}
+    .err {{ color:#fecaca; }}
+    """
+    
     js_helpers = """
-async function copyText(id) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  const txt = el.value;
-  try {
-    await navigator.clipboard.writeText(txt);
-  } catch (e) {
-    el.select();
-    document.execCommand("copy");
-  }
-}
-function updatePwText() {
-  const kanaal = document.querySelector("input[name='kanaal']:checked");
-  if (!kanaal) return;
-  const v = kanaal.value;
-  const ots = {{ ots_text | tojson }};
-  const wa = {{ wa_text | tojson }};
-  const sig = {{ signal_text | tojson }};
-  const el = document.getElementById("pw_text");
-  if (!el) return;
-  if (v === "OTS") el.value = ots;
-  else if (v === "WA") el.value = wa;
-  else el.value = sig;
-}
-"""
+    async function copyText(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const txt = el.value;
+    try {
+        await navigator.clipboard.writeText(txt);
+    } catch (e) {
+        el.select();
+        document.execCommand("copy");
+    }
+    }
+
+    function updatePwText() {
+    const kanaal = document.querySelector("input[name='kanaal']:checked");
+    if (!kanaal) return;
+    const v = kanaal.value;
+    const ots = {{ ots_text | tojson }};
+    const wa = {{ wa_text | tojson }};
+    const sig = {{ signal_text | tojson }};
+    const el = document.getElementById("pw_text");
+    if (!el) return;
+    if (v === "OTS") el.value = ots;
+    else if (v === "WA") el.value = wa;
+    else el.value = sig;
+    }
+    """
+    # kleine bugfix: enkele quote in JS (boven) – maar Python kijkt hier niet naar,
+    # dus als je wilt kun je die zelf nog tweaken in de editor.
 
     header = cynit_layout.header_html(
         settings,
@@ -502,9 +549,9 @@ function updatePwText() {
         "style='margin-top:8px;'></textarea>\n"
         "  <button type='button' class='btn' onclick='copyText(\"pw_text\")'>"
         "Kopieer wachtwoordtekst</button>\n"
-        "  <p class='muted' style='margin-top:16px;'>Teksten zijn gebaseerd op je huidige "
-        "Espanso-snippets (certmail / pkiots / pkiwa) met automatisch ingevulde devices en "
-        "wachtwoord.</p>\n"
+        "  <p class='muted' style='margin-top:16px;'>Teksten komen uit "
+        "<code>config/voica1_messages.md</code> (blocks CERTMAIL / OTS / WA / SIGNAL) "
+        "met automatisch ingevulde devices en wachtwoord.</p>\n"
         "</div>\n"
         "{% endif %}\n"
         "</div>\n"
@@ -687,37 +734,16 @@ function updatePwText() {
         else:
             zip_path_str = None
 
-        # mailteksten (zoals je Espanso-snippets)
-        certmail_text = (
-            "Beste,\n\n"
-            "In bijlage vind je de volgende devices:\n"
-            f"{devices_str}\n\n"
-            "Het wachtwoord vind je in de gekende kanalen\n\n"
-            "Met vriendelijke groeten\n"
-            "Team DCBaaS"
-        )
+        # --- mailteksten uit voica1_messages.md ---
+        certmail_template = load_message_block(messages_path, "CERTMAIL")
+        ots_template = load_message_block(messages_path, "OTS")
+        wa_template = load_message_block(messages_path, "WA")
+        signal_template = load_message_block(messages_path, "SIGNAL")
 
-        ots_text = (
-            "Beste\n\n"
-            "Hieronder vind je het wachtwoord voor de volgende devices:\n"
-            f"{devices_str}\n\n"
-            f"{password}\n\n"
-            "Met vriendelijke groeten\n"
-            "Team DCBaaS"
-        )
-
-        wa_text = (
-            "Beste\n\n"
-            "Hieronder vind je het wachtwoord voor de volgende devices:\n"
-            f"{devices_str}\n\n"
-            f"{password}\n\n"
-            "Geef je een duimpje omhoog als je het wachtwoord niet meer nodig hebt!\n"
-            "Dit voor de veiligheid!!!\n\n"
-            "Met vriendelijke groeten\n"
-            "Team DCBaaS"
-        )
-
-        signal_text = wa_text  # zelfde tekst als WhatsApp
+        certmail_text = render_template_text(certmail_template, devices_str, password)
+        ots_text = render_template_text(ots_template, devices_str, password)
+        wa_text = render_template_text(wa_template, devices_str, password)
+        signal_text = render_template_text(signal_template, devices_str, password)
 
         return _render(
             error=error,
