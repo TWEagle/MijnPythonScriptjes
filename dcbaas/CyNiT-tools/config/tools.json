@@ -5,6 +5,9 @@
       "name": "Certificate / CSR Viewer",
       "type": "web+gui",
       "script": "cert_viewer.py",
+      "web_path": "/cert-viewer",
+      "icon_web": "📜",
+      "icon_gui": "🧪",
       "description": "Decode X.509 certificaten en CSRs, bekijk subject/issuer/properties en exporteer naar JSON, CSV, XLSX, HTML, MD."
     },
     {
@@ -13,6 +16,7 @@
       "type": "web",
       "web_path": "/exports",
       "script": "cert_viewer.py",
+      "icon_web": "📂",
       "description": "Bekijk alle opgeslagen Markdown exports."
     },
     {
@@ -21,7 +25,17 @@
       "type": "web",
       "web_path": "/voica1",
       "script": "voica1.py",
-      "description": "Batch CSR + certificaatverwerking voor VOICA1 phones en PCs/VMs."     
+      "icon_web": "📱",
+      "description": "Batch CSR + certificaatverwerking voor VOICA1 phones en PCs/VMs."
+    },
+    {
+      "id": "configeditor",
+      "name": "Config & Theme Editor",
+      "type": "web",
+      "web_path": "/config-editor",
+      "script": "config_editor.py",
+      "icon_web": "⚙️",
+      "description": "Bewerk settings.json, VOICA1-config en templates centraal via CyNiT Tools."
     }
   ]
 }

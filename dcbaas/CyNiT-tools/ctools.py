@@ -1,576 +1,377 @@
 #!/usr/bin/env python3
-import sys
-import os
+"""
+ctools.py
+
+CyNiT Tools webhub:
+- Leest tools-config uit config/tools.json (via cynit_theme.load_tools()).
+- Homepagina met grid van tools (cards met 3D hover).
+- Aantal kolommen instelbaar via settings.json -> home_columns.
+- Icons per tool instelbaar via tools.json -> icon_web / icon_gui.
+- Web-only tools: volledige card is klikbaar.
+- Web+GUI / GUI-tools: aparte knoppen.
+- Registreert web-routes van:
+  * cert_viewer
+  * voica1
+  * config_editor
+- /start/ route om GUI-tools te starten (type 'gui' of 'web+gui').
+"""
+
+from __future__ import annotations
+
 import json
 import subprocess
+import sys
 from pathlib import Path
-from io import BytesIO
+from typing import List, Dict, Any, Optional
 
-from flask import Flask, request, render_template_string, send_file
+from flask import Flask, render_template_string, request, redirect, url_for
 
 import cynit_theme
+import cynit_layout
 import cert_viewer
 import voica1
 import config_editor
 
-# -------------------------------------------------------------------
-#  Basis setup
-# -------------------------------------------------------------------
 
-IS_FROZEN = bool(getattr(sys, "frozen", False))
-BASE_DIR = cynit_theme.BASE_DIR
+BASE_DIR = Path(__file__).parent
 
-# Basis config + tools + helpfiles
-settings = cynit_theme.load_settings()
-tools_cfg = cynit_theme.load_tools()
-help_cfg = cynit_theme.load_helpfiles()
+# ===== SETTINGS & TOOLS LADEN =====
 
-# lijstjes
-TOOLS = tools_cfg.get("tools", [])
-HELPFILES = help_cfg.get("helpfiles", [])
+SETTINGS: Dict[str, Any] = cynit_theme.load_settings()
+TOOLS_CFG: Dict[str, Any] = cynit_theme.load_tools()
+TOOLS: List[Dict[str, Any]] = TOOLS_CFG.get("tools", [])
 
-# Zorg dat certviewer altijd een web_path heeft (voor oudere tools.json)
-for tool in TOOLS:
-    if tool.get("id") == "certviewer" and not tool.get("web_path"):
-        tool["web_path"] = "/cert"
 
-COLORS = settings["colors"]
-UI = settings["ui"]
-
-BG = COLORS["background"]
-FG = COLORS["general_fg"]
-TITLE = COLORS["title"]
-BTN_BG = COLORS["button_bg"]
-BTN_FG = COLORS["button_fg"]
+# ===== FLASK-APP =====
 
 app = Flask(__name__)
 
-# -------------------------------------------------------------------
-#  Helpers
-# -------------------------------------------------------------------
 
-def restart_program():
-    """Herstart de volledige hub (nieuw proces, oude sluit af)."""
-    python = sys.executable
-    args = sys.argv
-    try:
-        subprocess.Popen([python] + args, cwd=BASE_DIR)
-    except Exception as e:
-        print(f"[ERROR] Kon herstart niet uitvoeren: {e}")
-    os._exit(0)
+# ===== HOME-TEMPLATE =====
 
-
-def start_external_py(script_name: str, extra_args=None):
-    """
-    Start een externe tool uit tools.json als apart proces.
-    Werkt in .py modus; EXE-modus kan later uitgebreid worden.
-    """
-    if extra_args is None:
-        extra_args = []
-    script_path = BASE_DIR / script_name
-    if not script_path.exists():
-        return False, f"Script {script_name} niet gevonden in {BASE_DIR}"
-
-    if IS_FROZEN:
-        return False, "Externe tools starten uit ctools.exe is nog niet geïmplementeerd."
-
-    try:
-        subprocess.Popen([sys.executable, str(script_path)] + extra_args, cwd=BASE_DIR)
-        return True, f"{script_name} werd opgestart."
-    except Exception as e:
-        return False, f"Kon {script_name} niet starten: {e}"
-
-
-def set_active_profile(profile_name: str):
-    """
-    Past active_profile in settings.json aan (als profiel bestaat).
-    """
-    path = cynit_theme.SETTINGS_PATH
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return False, "Kon settings.json niet lezen."
-
-    profiles = raw.get("profiles", {})
-    if profile_name not in profiles:
-        return False, f"Profiel '{profile_name}' bestaat niet in settings.json."
-
-    raw["active_profile"] = profile_name
-    try:
-        path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
-    except Exception as e:
-        return False, f"Kon settings.json niet schrijven: {e}"
-    return True, f"Actief profiel gewijzigd naar '{profile_name}'."
-
-# -------------------------------------------------------------------
-#  HTML template voor de hub (home)
-# -------------------------------------------------------------------
-
-HOME_TEMPLATE = f"""
+HOME_TEMPLATE = """
 <!doctype html>
 <html lang="nl">
 <head>
   <meta charset="utf-8">
   <title>CyNiT Tools</title>
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <style>
-    body {{
-      background: {BG};
-      color: {FG};
-      font-family: Arial, sans-serif;
-      margin: 0;
-    }}
-    .topbar {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 8px 16px;
-      background: #111;
-      border-bottom: 1px solid #333;
-    }}
-    .topbar-left {{
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }}
-    .topbar-right {{
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }}
-    .logo {{
-      max-height: {UI.get("logo_max_height", 80)}px;
-    }}
-    .page {{
-      padding: 20px;
-      min-height: calc(100vh - 120px);  /* zodat de footer mooi onderaan komt */
-    }}
-    h1, h2, h3 {{
-      color: {TITLE};
-    }}
-    .footer {{
-      padding: 8px 16px;
-      background: #111111;
-      border-top: 1px solid #333333;
-      color: {FG};
-      font-size: 0.85em;
-      text-align: right;
-    }}
-    .card {{
-      border: 1px solid #333;
-      background: #111;
-      padding: 12px 16px;
-      margin-bottom: 12px;
-      border-radius: 6px;
-    }}
-    .card-title {{
-      font-size: 1.15em;
-      margin-bottom: 4px;
-    }}
-    button {{
-      background: {BTN_BG};
-      color: {BTN_FG};
-      border: 1px solid {FG};
-      padding: 5px 10px;
-      cursor: pointer;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.6);
-      border-radius: 4px;
-      margin-right: 5px;
-    }}
-    button:hover {{
-      background: #222;
-    }}
-    a {{
-      color: {FG};
-      text-decoration: none;
-    }}
-    a:hover {{
-      text-decoration: underline;
-    }}
-    .msg {{
-      margin-bottom: 10px;
-      font-size: 0.9em;
-    }}
+  {{ base_css|safe }}
 
-    /* Wafelmenu */
-    .waffle-wrapper {{
-      position: relative;
-      display: inline-block;
-    }}
-    .waffle-icon {{
-      width: 26px;
-      height: 26px;
-      border-radius: 4px;
-      border: 1px solid {FG};
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 16px;
-      margin-right: 8px;
-    }}
-    .waffle-dropdown {{
-      display: none;
-      position: absolute;
-      top: 30px;
-      left: 0;
-      background: #111;
-      border: 1px solid #333;
-      min-width: 220px;
-      z-index: 999;
-      border-radius: 4px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.7);
-    }}
-    .waffle-dropdown a {{
-      display: block;
-      padding: 6px 10px;
-      font-size: 0.9em;
-      white-space: nowrap;
-    }}
-    .waffle-dropdown a:hover {{
-      background: #222;
-    }}
+  /* verstop eventueel kapotte header-afbeelding uit cynit_layout */
+  img[alt="CyNiT Logo"] {
+    display: none;
+  }
 
-    /* Help-hamburger rechts */
-    .hamburger-wrapper {{
-      position: relative;
-      display: inline-block;
-    }}
-    .hamburger-icon {{
-      width: 26px;
-      height: 26px;
-      border-radius: 4px;
-      border: 1px solid {FG};
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      font-size: 16px;
-    }}
-    .hamburger-dropdown {{
-      display: none;
-      position: absolute;
-      top: 30px;
-      right: 0;
-      background: #111;
-      border: 1px solid #333;
-      min-width: 220px;
-      z-index: 999;
-      border-radius: 4px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.7);
-    }}
-    .hamburger-dropdown a {{
-      display: block;
-      padding: 6px 10px;
-      font-size: 0.9em;
-      white-space: nowrap;
-    }}
-    .hamburger-dropdown a:hover {{
-      background: #222;
-    }}
+  /* === CyNiT Tools homepage grid === */
+  .tools-section {
+    margin-top: 32px;
+  }
 
-    select {{
-      background: #000;
-      color: {FG};
-      border: 1px solid #555;
-      border-radius: 4px;
-      padding: 2px 4px;
-    }}
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat({{ home_columns }}, minmax(280px, 1fr));
+    gap: 20px;
+  }
+
+  .tool-card {
+    background: #111111;
+    border-radius: 16px;
+    padding: 16px 20px;
+    box-shadow: 0 18px 35px rgba(0, 0, 0, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.03);
+    transform: translateY(0) scale(1);
+    transition:
+      transform 0.18s ease-out,
+      box-shadow 0.18s ease-out,
+      border-color 0.18s ease-out,
+      background 0.18s ease-out;
+  }
+
+  .tool-card:hover {
+    transform: translateY(-6px) scale(1.01);
+    box-shadow: 0 24px 45px rgba(0, 0, 0, 1);
+    border-color: rgba(0, 247, 0, 0.35);
+    background: #151515;
+  }
+
+  /* web-only: volledige card is link */
+  .tool-card-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .tool-card h3 {
+    margin: 0 0 8px 0;
+    font-size: 1.1rem;
+    color: {{ colors.title }};
+  }
+
+  .tool-card p {
+    margin: 0 0 12px 0;
+    color: {{ colors.general_fg }};
+    font-size: 0.95rem;
+  }
+
+  .tool-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .tool-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: none;
+    background: {{ colors.button_bg }};
+    color: {{ colors.button_fg }};
+    font-family: {{ ui.font_buttons }};
+    font-size: 0.85rem;
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  .tool-btn:hover {
+    filter: brightness(1.15);
+  }
+
+  .tool-btn span.icon {
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+
+  .muted {
+    color: #999;
+    font-size: 0.95rem;
+  }
+
+  .page-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+
+  .page-header img {
+    border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.8);
+  }
+
+  @media (max-width: 768px) {
+    .tools-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
   </style>
   <script>
-    function toggleWaffle() {{
-      var el = document.getElementById('waffle-menu');
-      if (!el) return;
-      el.style.display = (el.style.display === 'block') ? 'none' : 'block';
-    }}
-
-    function toggleHelpMenu() {{
-      var el = document.getElementById('help-menu');
-      if (!el) return;
-      el.style.display = (el.style.display === 'block') ? 'none' : 'block';
-    }}
-
-    async function restartApp() {{
-      try {{
-        await fetch('/restart');
-      }} catch (e) {{
-        // tijdens restart kan de fetch mislukken, is oké
-      }}
-      setTimeout(function() {{
-        window.location.href = '/';
-      }}, 1000);
-    }}
-
-    async function setProfile(event) {{
-      event.preventDefault();
-      var form = event.target;
-      var formData = new FormData(form);
-      try {{
-        await fetch('/set_profile', {{
-          method: 'POST',
-          body: formData
-        }});
-      }} catch (e) {{
-        // negeren; we herstarten toch
-      }}
-      restartApp();
-    }}
+  {{ common_js|safe }}
   </script>
 </head>
 <body>
-  <div class="topbar">
-    <div class="topbar-left">
-      <div class="waffle-wrapper">
-        <div class="waffle-icon" onclick="toggleWaffle()">▦</div>
-        <div id="waffle-menu" class="waffle-dropdown">
-          {{% for t in tools if t.get('web_path') %}}
-            <a href="{{{{ t.web_path }}}}">{{{{ t.name }}}}</a>
-          {{% endfor %}}
-          <a href="/">🏠 Hub home</a>
-          <a href="#" onclick="restartApp(); return false;">🔄 Reload app</a>
-        </div>
-      </div>
-      <img src="/logo.png" class="logo" alt="CyNiT Logo">
-      <span>CyNiT Tools</span>
-    </div>
-    <div class="topbar-right">
-      <form onsubmit="setProfile(event)" style="display:flex; align-items:center; gap:4px;">
-        <label style="font-size:0.9em;">Profiel:</label>
-        <select name="profile">
-          {{% for name in profiles %}}
-            <option value="{{{{ name }}}}" {{% if name == active_profile %}}selected{{% endif %}}>{{{{ name }}}}</option>
-          {{% endfor %}}
-        </select>
-        <button type="submit" style="padding:2px 6px; font-size:0.9em;">Set</button>
-      </form>
-
-      <div class="hamburger-wrapper">
-        <div class="hamburger-icon" onclick="toggleHelpMenu()">☰</div>
-        <div id="help-menu" class="hamburger-dropdown">
-          {{% for h in helpfiles %}}
-            <a href="/help/{{{{ h.id }}}}" target="_blank">{{{{ h.name }}}}</a>
-          {{% endfor %}}
-        </div>
-      </div>
-    </div>
-  </div>
-
+  {{ header|safe }}
   <div class="page">
-    {{% if msg %}}<div class="msg">{{{{ msg }}}}</div>{{% endif %}}
-
-    <h1>Welkom in CyNiT Tools</h1>
-    <p>Deze pagina leest automatisch je tools uit <code>config/tools.json</code>.</p>
+    <div class="page-header">
+      {% if logo_url %}
+        <img src="{{ logo_url }}" alt="CyNiT Logo Local"
+             style="max-height: {{ ui.logo_max_height }}px;">
+      {% endif %}
+      <div>
+        <h1>Welkom in CyNiT Tools</h1>
+        <p class="muted">
+          Deze pagina leest automatisch je tools uit <code>config/tools.json</code>.
+        </p>
+      </div>
+    </div>
 
     <h2>Tools</h2>
-    {{% for tool in tools %}}
-      <div class="card">
-        <div class="card-title">{{{{ tool.name }}}}</div>
-        <p style="font-size:0.9em;">{{{{ tool.description }}}}</p>
+    <div class="tools-section">
+      <div class="tools-grid">
+        {% for tool in tools %}
+          {# --- Web-only: volledige card is één <a> --- #}
+          {% if tool.type == 'web' and tool.web_path %}
+            <a href="{{ tool.web_path }}" class="tool-card tool-card-link">
+              <h3>{{ tool.name }}</h3>
+              <p>{{ tool.description }}</p>
+              <div class="tool-actions">
+                <span class="tool-btn">
+                  <span class="icon">{{ tool.icon_web or "🌐" }}</span>
+                  <span>Open Web</span>
+                </span>
+              </div>
+            </a>
 
-        {{% if tool.type == 'web+gui' %}}
-          {{% if tool.web_path %}}
-            <a href="{{{{ tool.web_path }}}}" style="margin-right:8px;">🌐 Open Web</a>
-          {{% endif %}}
-          <form method="post" action="/start/{{{{ tool.id }}}}" style="display:inline;">
-            <button type="submit">🖥 Start GUI</button>
-          </form>
-        {{% elif tool.type == 'web' %}}
-          {{% if tool.web_path %}}
-            <a href="{{{{ tool.web_path }}}}">🌐 Open Web</a>
-          {{% endif %}}
-        {{% elif tool.type == 'gui' %}}
-          <form method="post" action="/start/{{{{ tool.id }}}}">
-            <button type="submit">🖥 Start GUI</button>
-          </form>
-        {{% endif %}}
+          {# --- Web+GUI of alleen GUI: aparte knoppen --- #}
+          {% else %}
+            <div class="tool-card">
+              <h3>{{ tool.name }}</h3>
+              <p>{{ tool.description }}</p>
+
+              <div class="tool-actions">
+                {% if tool.type == 'web+gui' %}
+                  {% if tool.web_path %}
+                    <a class="tool-btn" href="{{ tool.web_path }}">
+                      <span class="icon">{{ tool.icon_web or "🌐" }}</span>
+                      <span>Open Web</span>
+                    </a>
+                  {% endif %}
+                  <form method="post" action="{{ url_for('start_tool') }}" style="margin:0;">
+                    <input type="hidden" name="tool_id" value="{{ tool.id }}">
+                    <button type="submit" class="tool-btn">
+                      <span class="icon">{{ tool.icon_gui or "🖥️" }}</span>
+                      <span>Start GUI</span>
+                    </button>
+                  </form>
+                {% elif tool.type == 'gui' %}
+                  <form method="post" action="{{ url_for('start_tool') }}" style="margin:0;">
+                    <input type="hidden" name="tool_id" value="{{ tool.id }}">
+                    <button type="submit" class="tool-btn">
+                      <span class="icon">{{ tool.icon_gui or "🖥️" }}</span>
+                      <span>Start GUI</span>
+                    </button>
+                  </form>
+                {% elif tool.type == 'web' and tool.web_path %}
+                  {# fallback, zou eigenlijk niet nodig moeten zijn #}
+                  <a class="tool-btn" href="{{ tool.web_path }}">
+                    <span class="icon">{{ tool.icon_web or "🌐" }}</span>
+                    <span>Open Web</span>
+                  </a>
+                {% endif %}
+              </div>
+            </div>
+          {% endif %}
+        {% endfor %}
       </div>
-    {{% endfor %}}
+    </div>
   </div>
-
-  <div class="footer">
-    © CyNiT 2024 - 2026
-  </div>
+  {{ footer|safe }}
 </body>
 </html>
 """
 
-# -------------------------------------------------------------------
-#  Routes
-# -------------------------------------------------------------------
+
+# ===== HULPFUNCTIES =====
+
+def _find_tool_by_id(tool_id: str) -> Optional[Dict[str, Any]]:
+    for t in TOOLS:
+        if t.get("id") == tool_id:
+            return t
+    return None
+
+
+def _start_gui_tool(tool: Dict[str, Any]) -> None:
+    """Start een GUI-tool via subprocess (python script)."""
+    script_name = tool.get("script")
+    if not script_name:
+        return
+    script_path = BASE_DIR / script_name
+    if not script_path.exists():
+        print(f"[WARN] Script niet gevonden voor tool {tool.get('id')}: {script_path}")
+        return
+
+    try:
+        subprocess.Popen([sys.executable, str(script_path)], cwd=str(BASE_DIR))
+    except Exception as e:
+        print(f"[ERROR] Kon GUI-tool niet starten ({tool.get('id')}): {e}")
+
+
+# ===== ROUTES =====
 
 @app.route("/", methods=["GET"])
-def home():
-    profiles = list(settings.get("profiles", {}).keys())
-    active_profile = settings.get("active_profile")
-    return render_template_string(
-        HOME_TEMPLATE,
-        tools=TOOLS,
-        msg=None,
-        profiles=profiles,
-        active_profile=active_profile,
-        helpfiles=HELPFILES,
-    )
+def index():
+    colors = SETTINGS.get("colors", {})
+    ui = SETTINGS.get("ui", {})
 
-
-@app.route("/start/<tool_id>", methods=["POST"])
-def start_tool(tool_id):
-    tool = next((t for t in TOOLS if t.get("id") == tool_id), None)
-    if not tool:
-        msg = f"Tool '{tool_id}' niet gevonden in tools.json."
-    else:
-        t_type = tool.get("type", "gui")
-        script = tool.get("script")
-        if tool_id == "certviewer":
-            ok, msg = start_external_py(script, extra_args=["--gui"])
-        else:
-            if t_type in ("gui", "web+gui"):
-                ok, msg = start_external_py(script)
-            else:
-                ok, msg = False, "Tooltype niet ondersteund voor start vanuit hub."
-
-    profiles = list(settings.get("profiles", {}).keys())
-    active_profile = settings.get("active_profile")
-
-    return render_template_string(
-        HOME_TEMPLATE,
-        tools=TOOLS,
-        msg=msg,
-        profiles=profiles,
-        active_profile=active_profile,
-        helpfiles=HELPFILES,
-    )
-
-
-@app.route("/set_profile", methods=["POST"])
-def set_profile_route():
-    profile = request.form.get("profile")
-    ok, msg = set_active_profile(profile)
-    status = 200 if ok else 400
-    return {"ok": ok, "message": msg}, status
-
-
-@app.route("/restart")
-def restart_route():
-    restart_program()
-    return ""  # praktisch nooit bereikt
-
-
-@app.route("/about")
-def about_route():
-    """
-    Oude /about route blijft nog werken.
-    (Zelfde inhoud als 'about' in helpfiles.)
-    """
+    # aantal kolommen uit settings.json (fallback 3)
+    home_columns = SETTINGS.get("home_columns", 3)
     try:
-        md = cynit_theme.ABOUT_MD.read_text(encoding="utf-8")
+        home_columns = int(home_columns)
+        if home_columns < 1:
+            home_columns = 1
+        if home_columns > 5:
+            home_columns = 5
     except Exception:
-        md = "ABOUT.md kon niet gelezen worden."
-    html_body = cynit_theme.markdown_to_html_simple(md)
-    return f"""<!doctype html>
-<html lang="nl">
-<head>
-  <meta charset="utf-8">
-  <title>About CyNiT Tools</title>
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
-  <style>
-    body {{
-      background: {BG};
-      color: {FG};
-      font-family: Arial, sans-serif;
-      margin: 20px;
-    }}
-    h1, h2, h3 {{ color: {TITLE}; }}
-    a {{ color: {FG}; }}
-  </style>
-</head>
-<body>
-{html_body}
-</body>
-</html>"""
+        home_columns = 3
+
+    # logo-url zelf resolven (relatief naar static/)
+    paths = SETTINGS.get("paths", {})
+    logo_path = paths.get("logo", "")
+    if logo_path:
+        if logo_path.startswith("/"):
+            logo_url = logo_path
+        else:
+            logo_url = url_for("static", filename=logo_path)
+    else:
+        logo_url = ""
+
+    base_css = cynit_layout.common_css(SETTINGS)
+    common_js = cynit_layout.common_js()
+    header_html = cynit_layout.header_html(
+        SETTINGS,
+        tools=TOOLS,
+        title="CyNiT Tools",
+        right_html="",
+    )
+    footer_html = cynit_layout.footer_html()
+
+    return render_template_string(
+        HOME_TEMPLATE,
+        tools=TOOLS,
+        colors=colors,
+        ui=ui,
+        base_css=base_css,
+        common_js=common_js,
+        header=header_html,
+        footer=footer_html,
+        home_columns=home_columns,
+        logo_url=logo_url,
+    )
 
 
-@app.route("/help/<help_id>")
-def help_route(help_id):
-    """
-    Toont een helpfile uit config/helpfiles.json in je CyNiT-kleuren.
-    """
-    entry = next((h for h in HELPFILES if h.get("id") == help_id), None)
-    if not entry:
-        return f"Helpfile '{help_id}' niet gevonden in helpfiles.json.", 404
-
-    md_rel = entry.get("md")
-    if not md_rel:
-        return f"Helpfile '{help_id}' heeft geen 'md' pad.", 500
-
-    md_path = BASE_DIR / md_rel
-    if not md_path.exists():
-        return f"Markdown bestand '{md_path}' niet gevonden.", 404
-
-    try:
-        md = md_path.read_text(encoding="utf-8")
-    except Exception as e:
-        return f"Markdown bestand kon niet gelezen worden: {e}", 500
-
-    html_body = cynit_theme.markdown_to_html_simple(md)
-    title = entry.get("name", f"Help: {help_id}")
-    return f"""<!doctype html>
-<html lang="nl">
-<head>
-  <meta charset="utf-8">
-  <title>{title}</title>
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
-  <style>
-    body {{
-      background: {BG};
-      color: {FG};
-      font-family: Arial, sans-serif;
-      margin: 20px;
-    }}
-    h1, h2, h3 {{ color: {TITLE}; }}
-    a {{ color: {FG}; }}
-  </style>
-</head>
-<body>
-{html_body}
-</body>
-</html>"""
+from flask import url_for  # onderaan zodat het boven index() beschikbaar is
 
 
-@app.route("/favicon.ico")
-def favicon_route():
-    ico_bytes = cynit_theme.generate_ico_bytes()
-    if ico_bytes is None:
-        return "", 404
-    return send_file(BytesIO(ico_bytes), mimetype="image/x-icon")
+@app.route("/start/", methods=["POST"])
+def start_tool():
+    tool_id = request.form.get("tool_id", "").strip()
+    tool = _find_tool_by_id(tool_id)
+    if tool is None:
+        return redirect(url_for("index"))
+
+    if tool.get("type") in ("gui", "web+gui"):
+        _start_gui_tool(tool)
+
+    return redirect(url_for("index"))
 
 
-@app.route("/logo.png")
-def logo_route():
-    if not cynit_theme.LOGO_PATH.exists():
-        return "", 404
-    return send_file(str(cynit_theme.LOGO_PATH), mimetype="image/png")
+# ===== EXTERNE TOOL-ROUTES REGISTREREN =====
+
+def register_external_routes(app: Flask) -> None:
+    """Registreer routes van cert_viewer, voica1 en config_editor."""
+    cert_viewer.register_web_routes(app, SETTINGS, TOOLS)
+
+    voica_cfg_path = BASE_DIR / "config" / "voica1.json"
+    if voica_cfg_path.exists():
+        try:
+            voica_cfg = json.loads(voica_cfg_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"[WARN] Kon voica1-config niet lezen: {exc}")
+            voica_cfg = {}
+    else:
+        voica_cfg = {}
+
+    voica1.register_web_routes(app, SETTINGS, TOOLS, voica_cfg)
+    config_editor.register_web_routes(app, SETTINGS, TOOLS)
 
 
-# Cert viewer web-routes
-cert_viewer.register_web_routes(app, settings, TOOLS)
-
-# VOICA1 config uit config/voica1.json
-voica1_cfg_path = Path(__file__).parent / "config" / "voica1.json"
-if voica1_cfg_path.exists():
-    with voica1_cfg_path.open(encoding="utf-8") as f:
-        voica_cfg = json.load(f)
-else:
-    voica_cfg = {}
-
-# VOICA1 web-routes
-voica1.register_web_routes(app, settings, TOOLS, voica_cfg)
-
-# Config Editor web-routes
-config_editor.register_web_routes(app, settings, TOOLS)
-
+# ===== MAIN =====
 
 if __name__ == "__main__":
+    register_external_routes(app)
     app.run(host="127.0.0.1", port=5000, debug=False)
-    # Als je liever alles op 5445 draait:
-    # app.run(host="127.0.0.1", port=5445, debug=False)
-
