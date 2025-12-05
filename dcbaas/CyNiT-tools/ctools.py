@@ -11,6 +11,7 @@ from flask import Flask, request, render_template_string, send_file
 import cynit_theme
 import cert_viewer
 import voica1
+import config_editor
 
 # -------------------------------------------------------------------
 #  Basis setup
@@ -563,6 +564,9 @@ else:
 
 # VOICA1 web-routes
 voica1.register_web_routes(app, settings, TOOLS, voica_cfg)
+
+# Config Editor web-routes
+config_editor.register_web_routes(app, settings, TOOLS)
 
 
 if __name__ == "__main__":

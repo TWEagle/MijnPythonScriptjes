@@ -312,6 +312,8 @@ def render_template_text(template: str, devices: str, password: str) -> str:
     """
     Vervangt placeholders {{devices}} en {{password}}.
     """
+    if not template:
+        return ""
     return (
         template
         .replace("{{devices}}", devices)
@@ -324,21 +326,17 @@ def render_template_text(template: str, devices: str, password: str) -> str:
 def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) -> None:
     """
     Registreert /voica1 en /voica1/process in een bestaande Flask-app.
+    Gebruikt cynit_layout header/footer/wafel/menu en kleuren uit settings.
     """
+    global OPENSSL_BIN, PASS_LENGTH, KEY_SIZE_DEFAULT
 
     if voica_cfg is None:
         voica_cfg = {}
 
-    # GLOBALS MOETEN EERST
-    global OPENSSL_BIN, PASS_LENGTH, KEY_SIZE_DEFAULT
-
-    default_key_size = int(voica_cfg.get("default_key_size", KEY_SIZE_DEFAULT))
-    default_pass_length = int(voica_cfg.get("pass_length", PASS_LENGTH))
-    openssl_bin = voica_cfg.get("openssl_bin", OPENSSL_BIN)
-
-    OPENSSL_BIN = openssl_bin
-    PASS_LENGTH = default_pass_length
-    KEY_SIZE_DEFAULT = default_key_size
+    # overrides uit config/voica1.json
+    OPENSSL_BIN = voica_cfg.get("openssl_bin", OPENSSL_BIN)
+    PASS_LENGTH = int(voica_cfg.get("pass_length", PASS_LENGTH))
+    KEY_SIZE_DEFAULT = int(voica_cfg.get("default_key_size", KEY_SIZE_DEFAULT))
 
     def compute_default_base_dir() -> str:
         """
@@ -359,77 +357,114 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
     base_css = cynit_layout.common_css(settings)
     common_js = cynit_layout.common_js()
 
-    # kleuren uit je theme-settings (settings.json → colors.button_bg / button_fg)
     colors_cfg = settings.get("colors", {})
     accent_bg = colors_cfg.get("button_bg", "#facc15")
     accent_fg = colors_cfg.get("button_fg", "#000000")
 
     extra_css = f"""
-    .card {{
-    max-width: 1000px;
-    margin: 0 auto 20px auto;
-    background: #1e1e1e;
-    padding: 20px;
-    border-radius: 16px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
-    }}
-    label {{ display:block; margin-top:12px; font-weight:600; }}
-    input[type=text], textarea, select {{
-    width:100%; padding:8px 10px;
-    border-radius:8px; border:1px solid #444;
-    background:#111; color:#eee;
-    }}
-    textarea {{ min-height:80px; font-family:monospace; }}
-    .btn {{
-    display:inline-block;
-    margin-top:16px;
-    padding:8px 16px;
-    border-radius:999px;
-    border:none;
-    background: {accent_bg};
-    color: {accent_fg};
-    font-weight:700;
-    cursor:pointer;
-    }}
-    .btn:hover {{
-    filter: brightness(1.05);
-    }}
-    .muted {{ color:#aaa; font-size:0.9em; }}
-    .flash {{ background:#7f1d1d; color:#fecaca;
-            padding:8px 12px; border-radius:8px; margin-bottom:8px; }}
-    .ok {{ color:#bbf7d0; }}
-    .err {{ color:#fecaca; }}
-    """
-    
-    js_helpers = """
-    async function copyText(id) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const txt = el.value;
-    try {
-        await navigator.clipboard.writeText(txt);
-    } catch (e) {
-        el.select();
-        document.execCommand("copy");
-    }
-    }
+.card {{
+  max-width: 1000px;
+  margin: 0 auto 20px auto;
+  background: #1e1e1e;
+  padding: 20px;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+}}
+label {{ display:block; margin-top:12px; font-weight:600; }}
+input[type=text], textarea, select {{
+  width:100%; padding:8px 10px;
+  border-radius:8px; border:1px solid #444;
+  background:#111; color:#eee;
+}}
+textarea {{ min-height:80px; font-family:monospace; }}
+.btn {{
+  display:inline-block;
+  margin-top:16px;
+  padding:8px 16px;
+  border-radius:999px;
+  border:none;
+  background: {accent_bg};
+  color: {accent_fg};
+  font-weight:700;
+  cursor:pointer;
+}}
+.btn:hover {{
+  filter: brightness(1.05);
+}}
+#progress-container {{
+  width:100%;
+  height:10px;
+  border-radius:999px;
+  background:#111;
+  overflow:hidden;
+  margin:8px 0 4px 0;
+}}
+#progress-bar {{
+  height:100%;
+  width:0%;
+  background:{accent_fg};
+  transition: width 0.3s ease-out;
+}}
+.muted {{ color:#aaa; font-size:0.9em; }}
+.flash {{ background:#7f1d1d; color:#fecaca;
+         padding:8px 12px; border-radius:8px; margin-bottom:8px; }}
+.ok {{ color:#bbf7d0; }}
+.err {{ color:#fecaca; }}
+"""
 
-    function updatePwText() {
-    const kanaal = document.querySelector("input[name='kanaal']:checked");
-    if (!kanaal) return;
-    const v = kanaal.value;
-    const ots = {{ ots_text | tojson }};
-    const wa = {{ wa_text | tojson }};
-    const sig = {{ signal_text | tojson }};
-    const el = document.getElementById("pw_text");
-    if (!el) return;
-    if (v === "OTS") el.value = ots;
-    else if (v === "WA") el.value = wa;
-    else el.value = sig;
+    js_helpers = """
+async function copyText(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const txt = el.value;
+  try {
+    await navigator.clipboard.writeText(txt);
+  } catch (e) {
+    el.select();
+    document.execCommand("copy");
+  }
+}
+
+function updatePwText() {
+  const kanaal = document.querySelector('input[name="kanaal"]:checked');
+  if (!kanaal) return;
+  const v = kanaal.value;
+  const ots = {{ ots_text | tojson }};
+  const wa = {{ wa_text | tojson }};
+  const sig = {{ signal_text | tojson }};
+  const el = document.getElementById("pw_text");
+  if (!el) return;
+  if (v === "OTS") el.value = ots;
+  else if (v === "WA") el.value = wa;
+  else el.value = sig;
+}
+
+function initProgress() {
+  const container = document.getElementById("progress-container");
+  const bar = document.getElementById("progress-bar");
+  const text = document.getElementById("progress-text");
+  if (!container || !bar || !text) return;
+  const total = parseInt(container.getAttribute("data-total") || "0");
+  const processed = parseInt(container.getAttribute("data-processed") || "0");
+  if (!total) return;
+  text.textContent = processed + "/" + total + " devices verwerkt";
+  let current = 0;
+  const target = Math.round((processed / total) * 100);
+  const interval = setInterval(function() {
+    current += 5;
+    if (current >= target) {
+      current = target;
+      clearInterval(interval);
     }
-    """
-    # kleine bugfix: enkele quote in JS (boven) – maar Python kijkt hier niet naar,
-    # dus als je wilt kun je die zelf nog tweaken in de editor.
+    bar.style.width = current + "%";
+  }, 30);
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  initProgress();
+  updatePwText();
+});
+"""
 
     header = cynit_layout.header_html(
         settings,
@@ -519,6 +554,11 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
         "<div class='card'>\n"
         "  <h2>Stap 2 – Verwerking</h2>\n"
         "  <p><strong>Map:</strong> {{ base_dir }}</p>\n"
+        "  <div id='progress-container' data-total='{{ results|length }}' "
+        "data-processed='{{ results|length }}'>\n"
+        "    <div id='progress-bar'></div>\n"
+        "  </div>\n"
+        "  <p id='progress-text' class='muted'></p>\n"
         "  <h3>Resultaten per device</h3>\n"
         "  <ul>\n"
         "  {% for r in results %}\n"
@@ -527,6 +567,15 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
         "{{ r.device }} – {{ r.message }}</li>\n"
         "  {% endfor %}\n"
         "  </ul>\n"
+        "  {% if missing_certs %}\n"
+        "  <h3>Ontbrekende certificaten</h3>\n"
+        "  <p class='err'>Voor de volgende devices werd geen .CER/.CRT/.PEM gevonden in de map:</p>\n"
+        "  <ul>\n"
+        "  {% for mc in missing_certs %}\n"
+        "    <li>{{ mc.device }} → CN: {{ mc.cn }}</li>\n"
+        "  {% endfor %}\n"
+        "  </ul>\n"
+        "  {% endif %}\n"
         "  {% if zip_path %}\n"
         "  <h3>ZIP-bestand (phones)</h3>\n"
         "  <p>{{ zip_path }}</p>\n"
@@ -556,7 +605,8 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
         "{% endif %}\n"
         "</div>\n"
         f"{footer}\n"
-        "</body>\n</html>\n"
+        "</body>\n"
+        "</html>\n"
     )
 
     def _render(**ctx):
@@ -583,6 +633,7 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
             ots_text="",
             wa_text="",
             signal_text="",
+            missing_certs=[],
         )
 
     @app.route("/voica1/generate", methods=["POST"])
@@ -619,6 +670,7 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
                 ots_text="",
                 wa_text="",
                 signal_text="",
+                missing_certs=[],
             )
 
         base_dir = Path(base_dir_str)
@@ -646,6 +698,7 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
                 ots_text="",
                 wa_text="",
                 signal_text="",
+                missing_certs=[],
             )
 
         password = generate_password()
@@ -684,6 +737,7 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
             ots_text="",
             wa_text="",
             signal_text="",
+            missing_certs=[],
         )
 
     @app.route("/voica1/process", methods=["POST"])
@@ -709,6 +763,13 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
         cert_map = map_certs_by_cn(base_dir)
         results = []
         pem_files: List[Path] = []
+        missing_certs = []
+
+        # eerst ontbrekende certificaten bepalen
+        for dev in devices:
+            cn = build_cn(dev, device_type)
+            if cn not in cert_map:
+                missing_certs.append({"device": dev, "cn": cn})
 
         for dev in devices:
             cn = build_cn(dev, device_type)
@@ -764,6 +825,7 @@ def register_web_routes(app: Flask, settings: dict, tools=None, voica_cfg=None) 
             ots_text=ots_text,
             wa_text=wa_text,
             signal_text=signal_text,
+            missing_certs=missing_certs,
         )
 
 
