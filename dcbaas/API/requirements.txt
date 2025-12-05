@@ -1,0 +1,6 @@
+pyjwt
+cryptography
+jwcrypto
+requests
+pyperclip
+ttkbootstrap

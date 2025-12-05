@@ -1,0 +1,1 @@
+pythonw.exe "C:\dr\OneDrive - Vlaamse overheid - Office 365\DCBaaS\xca\passgen1.pyw"

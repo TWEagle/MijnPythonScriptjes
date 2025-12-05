@@ -1,0 +1,14 @@
+{
+  "last_profile": "DCBaaS",
+  "profiles": {
+    "DCBaaS": {
+      "postman_api_key": "PMAK-691f13669a6fd8000137eb20-c0aec80c5d2727bc6fddfd121bd8aae346",
+      "share_url": "https://vodcbaas.postman.co/workspace/DCBaaS~f6ff56aa-cbd3-4972-8d9c-b94b9199cdc4/request/47351562-2875b71f-2117-4837-a152-0d3c980eb0a5?action=share&creator=47351562&active-environment=47351562-7ec36014-7175-4612-a933-7c8c14fa4a25",
+      "environment_uid": "47351562-7ec36014-7175-4612-a933-7c8c14fa4a25",
+      "default_jwk_path": "C:/Users/lemmenmf/OneDrive - Vlaamse overheid - Office 365/DCBaaS/API/prd/DCBaaS-PO/private.jwk",
+      "last_env": "PROD",
+      "tls_ignore_verify": true,
+      "tls_ca_path": ""
+    }
+  }
+}
