@@ -1,0 +1,33 @@
+{
+  "tools": [
+    {
+      "id": "certviewer",
+      "name": "Certificate / CSR Viewer",
+      "type": "web+gui",
+      "script": "cert_viewer.py",
+      "description": "Decode X.509 certificaten en CSRs, bekijk subject/issuer/properties en exporteer naar JSON, CSV, XLSX, HTML, MD."
+    },
+    {
+      "id": "exports",
+      "name": "Saved Exports",
+      "type": "web",
+      "web_path": "/exports",
+      "script": "cert_viewer.py",
+      "description": "Bekijk alle opgeslagen Markdown exports."
+    },
+    {
+      "id": "jwt2jwk",
+      "name": "JWT Builder",
+      "type": "gui",
+      "script": "JWT2JWK.py",
+      "description": "Jouw bestaande JWT tool (JWT2JWK.py)."
+    },
+    {
+      "id": "passgen",
+      "name": "Password Generator",
+      "type": "gui",
+      "script": "passgen1.py",
+      "description": "Jouw bestaande password generator GUI."
+    }
+  ]
+}
