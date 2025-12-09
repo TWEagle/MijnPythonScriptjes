@@ -23,6 +23,8 @@ import socket
 import threading
 import io
 import zipfile
+import subprocess
+import requests
 
 import requests
 import pandas as pd
@@ -209,26 +211,116 @@ def format_status_message(prefix: str = "Status update"):
 
     return "\n".join(lines)
 
+def get_ngrok_tunnels():
+    """
+    Haalt alle ngrok-tunnels op via de lokale API en
+    geeft een dict terug: {"ssh": url_of_None, "http": url_of_None}
+    """
+    tunnels = {"ssh": None, "http": None}
+
+    try:
+        resp = requests.get("http://127.0.0.1:4040/api/tunnels", timeout=2)
+        data = resp.json()
+    except Exception:
+        # Als ngrok niet draait of API niet bereikbaar is
+        return tunnels
+
+    for t in data.get("tunnels", []):
+        proto = t.get("proto")
+        public = t.get("public_url", "")
+        config = t.get("config", {})
+        addr = str(config.get("addr", ""))
+
+        # SSH = tcp-tunnel naar poort 22
+        if proto == "tcp" and (addr.endswith(":22") or addr == "22" or "22" in addr):
+            tunnels["ssh"] = public
+
+        # Dashboard = http/https-tunnel naar poort 8080
+        if proto in ("http", "https") and ("8080" in addr or addr.endswith(":8080")):
+            tunnels["http"] = public
+
+    return tunnels
+
+
+def ensure_ngrok_running():
+    """
+    Zorgt dat zowel de SSH-tunnel (tcp 22) als de HTTP-tunnel (http 8080)
+    lopen. Als ze ontbreken, worden ze gestart.
+    Geeft daarna opnieuw de tunnels dict terug.
+    """
+    tunnels = get_ngrok_tunnels()
+    started = False
+
+    # Start SSH-tunnel indien nodig
+    if tunnels["ssh"] is None:
+        try:
+            subprocess.Popen(
+                ["/usr/local/bin/ngrok", "tcp", "22"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            started = True
+        except Exception:
+            pass
+
+    # Start HTTP/HTTPS-tunnel voor dashboard indien nodig
+    if tunnels["http"] is None:
+        try:
+            subprocess.Popen(
+                ["/usr/local/bin/ngrok", "http", "8080"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            started = True
+        except Exception:
+            pass
+
+    # Als er iets is opgestart, even kort wachten en opnieuw ophalen
+    if started:
+        time.sleep(3)
+        tunnels = get_ngrok_tunnels()
+
+    return tunnels
+
 def status_notifier():
     """
-    Stuurt periodiek (default elk uur) een statusupdate zolang de scan nog loopt.
-    Interval aanpasbaar via STATUS_INTERVAL_MINUTES.
+    Stuurt elk uur een statusbericht + ngrok-info.
+    Zorgt ook dat ngrok-tunnels er zijn (tcp 22 en http 8080).
     """
-    try:
-        interval_min = int(os.getenv("STATUS_INTERVAL_MINUTES", "60"))
-    except ValueError:
-        interval_min = 60
-    if interval_min <= 0:
-        return
+    from notify import send_notifications  # import hier laten staan om circular imports te vermijden
 
-    # Eerste sleep zodat start-notificatie niet dubbel komt
     while True:
-        time.sleep(interval_min * 60)
-        status = dashboard_data.get("status")
-        if status in ("done", "error"):
-            break
-        msg = format_status_message(prefix="⏱️ Uurlijkse statusupdate CyNiT DNS Scan")
-        send_notifications(msg)
+        try:
+            # Zorg dat ngrok-tunnels bestaan en haal huidige urls op
+            tunnels = ensure_ngrok_running()
+
+            ssh_url = tunnels["ssh"] or "❌ Geen ngrok SSH tunnel (tcp 22)"
+            http_url = tunnels["http"] or "❌ Geen ngrok HTTP/HTTPS tunnel (poort 8080)"
+
+            # Hier kun je eventueel extra scanstatus toevoegen,
+            # bv. aantal domeinen, timestamp, etc.
+            msg_lines = [
+                "⏱ Uurlijke DNS scanner statusupdate",
+                "",
+                f"📡 SSH via ngrok: {ssh_url}",
+                f"🌐 Dashboard via ngrok: {http_url}",
+                "",
+                "📊 Scanner draait nog (status_notifier actief).",
+            ]
+
+            message = "\n".join(msg_lines)
+            send_notifications(message)
+
+        except Exception as e:
+            # Fout ook melden via notify
+            try:
+                send_notifications(f"⚠️ Fout in status_notifier(): {e}")
+            except Exception:
+                # Als ook notify crasht, kunnen we hier niets meer doen
+                pass
+
+        # Wachten tot volgende uur
+        time.sleep(3600)
 
 # === Logging & Helpers ===
 

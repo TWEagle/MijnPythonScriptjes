@@ -35,6 +35,8 @@ import cert_viewer
 import voica1
 import config_editor
 import dcb_org_export
+import cynit_notify  # nieuwe helper
+from cynit_notify import send_signal_message, SignalError
 
 
 BASE_DIR = Path(__file__).parent
@@ -303,6 +305,131 @@ def restart():
     """
     reload_config()
     return "OK"
+  
+from flask import flash  # als je flash messages wilt gebruiken
+
+@app.route("/signal-test", methods=["GET", "POST"])
+def signal_test():
+    colors = SETTINGS.get("colors", {})
+    ui = SETTINGS.get("ui", {})
+    base_css = cynit_layout.common_css(SETTINGS)
+    common_js = cynit_layout.common_js()
+    header_html = cynit_layout.header_html(
+        SETTINGS,
+        tools=TOOLS,
+        title="Signal test",
+        right_html="",
+    )
+    footer_html = cynit_layout.footer_html()
+
+    msg = ""
+    err = None
+    ok = None
+
+    if request.method == "POST":
+        msg = request.form.get("message", "").strip()
+        recips_raw = request.form.get("recipients", "").strip()
+        recips = [r.strip() for r in recips_raw.splitlines() if r.strip()]
+
+        try:
+            if recips:
+                send_signal_message(msg, recips)
+            else:
+                send_signal_message(msg)
+            ok = "Bericht via Signal verzonden."
+        except SignalError as e:
+            err = str(e)
+
+    template = """
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <title>Signal Test</title>
+  <style>
+    {{ base_css|safe }}
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #050505;
+      color: {{ colors.general_fg }};
+      font-family: Consolas, monospace;
+      font-size: 0.9rem;
+    }
+    .flash-ok {
+      background: #112211;
+      border: 1px solid #22aa22;
+      padding: 8px 10px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      color: #bbf7d0;
+      font-size: 0.9rem;
+    }
+    .flash-err {
+      background: #221111;
+      border: 1px solid #aa3333;
+      padding: 8px 10px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      color: #fecaca;
+      font-size: 0.9rem;
+    }
+  </style>
+  <script>
+    {{ common_js|safe }}
+  </script>
+</head>
+<body>
+  {{ header|safe }}
+  <div class="page">
+    <h1>Signal test</h1>
+    <p class="muted">
+      Verstuur een testbericht via Signal (config uit <code>config/notify.json</code>).
+    </p>
+
+    {% if ok %}
+      <div class="flash-ok">{{ ok }}</div>
+    {% endif %}
+    {% if err %}
+      <div class="flash-err">{{ err }}</div>
+    {% endif %}
+
+    <form method="post">
+      <label><strong>Bericht</strong></label><br>
+      <textarea name="message">{{ msg }}</textarea>
+
+      <p class="muted" style="margin-top:4px;">
+        Laat ontvangers leeg om <code>default_recipients</code> uit notify.json te gebruiken.
+      </p>
+
+      <label><strong>Ontvangers (één per lijn, optioneel)</strong></label><br>
+      <textarea name="recipients" style="min-height:60px;"></textarea>
+
+      <div style="margin-top:12px;">
+        <button type="submit" class="tool-btn">Verstuur via Signal</button>
+      </div>
+    </form>
+  </div>
+  {{ footer|safe }}
+</body>
+</html>
+    """
+
+    return render_template_string(
+        template,
+        base_css=base_css,
+        common_js=common_js,
+        header=header_html,
+        footer=footer_html,
+        colors=colors,
+        ui=ui,
+        msg=msg,
+        ok=ok,
+        err=err,
+    )
   
 @app.route("/", methods=["GET"])
 def index():
