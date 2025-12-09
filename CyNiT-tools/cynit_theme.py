@@ -233,23 +233,55 @@ def ensure_about():
         ABOUT_MD.write_text(ABOUT_DEFAULT, encoding="utf-8")
 
 
-def markdown_to_html_simple(md_text: str) -> str:
-    lines = md_text.splitlines()
-    html_lines = []
-    for line in lines:
-        s = line.strip()
-        if not s:
-            html_lines.append("<p></p>")
-        elif s.startswith("### "):
-            html_lines.append(f"<h3>{s[4:]}</h3>")
-        elif s.startswith("## "):
-            html_lines.append(f"<h2>{s[3:]}</h2>")
-        elif s.startswith("# "):
-            html_lines.append(f"<h1>{s[2:]}</h1>")
-        else:
-            html_lines.append(f"<p>{s}</p>")
-    return "\n".join(html_lines)
+def markdown_to_html_simple(text: str) -> str:
+    """
+    Render Markdown naar HTML.
 
+    - Eerst proberen we de 'markdown' library (pip install markdown)
+      met o.a. de 'tables' extensie zodat je | Field | Value |-tabellen
+      netjes gerenderd worden.
+    - Als die lib ontbreekt of crasht, vallen we terug op een heel
+      simpele converter zodat de pagina toch leesbaar blijft.
+    """
+    # 1) "Echte" Markdown-renderer als die beschikbaar is
+    try:
+        import markdown as mdlib  # type: ignore
+
+        return mdlib.markdown(
+            text,
+            extensions=[
+                "extra",      # kopjes, lijsten, etc.
+                "tables",     # pipe-tables zoals in jouw exports
+                "sane_lists", # wat nettere lijsten
+            ],
+            output_format="html5",
+        )
+    except Exception:
+        # 2) Heel eenvoudige fallback (zonder tabellen)
+        lines = text.splitlines()
+        html_lines = []
+
+        for line in lines:
+            stripped = line.strip()
+
+            if stripped.startswith("### "):
+                html_lines.append(f"<h3>{stripped[4:]}</h3>")
+            elif stripped.startswith("## "):
+                html_lines.append(f"<h2>{stripped[3:]}</h2>")
+            elif stripped.startswith("# "):
+                html_lines.append(f"<h1>{stripped[2:]}</h1>")
+            elif stripped == "":
+                html_lines.append("<br>")
+            else:
+                esc = (
+                    stripped
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                )
+                html_lines.append(f"<p>{esc}</p>")
+
+        return "\n".join(html_lines)
 
 def _load_logo_image():
     path = LOGO_PATH
