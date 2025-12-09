@@ -1,0 +1,16 @@
+{
+  "merk": null,
+  "processed": 0,
+  "valid": 52293,
+  "total": 4588971,
+  "eta": "00:00:00",
+  "speed": 0,
+  "last_save": null,
+  "status": "done",
+  "start_time": "2025-12-09 09:55:41",
+  "end_time": "2025-12-09 09:55:48",
+  "new_this_run": 0,
+  "txt_files": 6,
+  "xlsx_files": 6,
+  "csv_files": 6
+}

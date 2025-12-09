@@ -50,6 +50,8 @@
   "md": {
     "title_prefix": "# ",
     "section_prefix": "## ",
-    "bold_field_names": true
+    "bold_field_names": true,
+    "table_header": "| Field | Value |",
+    "table_sep": "| --- | --- |"
   }
 }
