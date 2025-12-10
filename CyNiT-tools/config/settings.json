@@ -19,6 +19,11 @@
     "font_main": "Consolas",
     "font_buttons": "Segoe UI"
   },
+  "dev_mode": true,
+  "secret_key": "cynit-super-secret",
+  "secrets": {
+    "yt_pin": "3141"
+  },
   "home_columns": 4,
   "active_profile": "CyNiT",
   "profiles": {
@@ -86,6 +91,9 @@
         "logo_max_height": 80,
         "font_main": "Consolas",
         "font_buttons": "Segoe UI"
+      },
+      "secrets": {
+        "yt_pin": "3990"
       }
     }
   }

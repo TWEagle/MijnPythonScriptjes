@@ -13,7 +13,9 @@ CyNiT Tools webhub:
   * cert_viewer
   * voica1
   * config_editor
+  * dcb_org_export
 - /start/ route om GUI-tools te starten (type 'gui' of 'web+gui').
+- /yt-launch: PIN-beveiligde launcher voor SP-YT/yt.py.
 """
 
 from __future__ import annotations
@@ -21,12 +23,24 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import socket
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
-from flask import Flask, render_template_string, request, redirect, url_for, send_from_directory
+from flask import (
+    Flask,
+    render_template_string,
+    request,
+    redirect,
+    url_for,
+    send_from_directory,
+    session,
+    g,
+)
 
 import logging
+
 logging.basicConfig(level=logging.DEBUG)
 
 import cynit_theme
@@ -38,14 +52,47 @@ import dcb_org_export
 import cynit_notify  # nieuwe helper
 from cynit_notify import send_signal_message, SignalError
 
-
 BASE_DIR = Path(__file__).parent
+SPYT_DIR = BASE_DIR.parent / "SP-YT"
+START_TIME = time.time()
+REQUEST_COUNT = 0
+
+
+# Fallback PIN als er niets in settings.json staat
+YTL_PIN_DEFAULT = "3990"
+
 
 # ===== SETTINGS & TOOLS LADEN =====
 
 SETTINGS: Dict[str, Any] = {}
 TOOLS_CFG: Dict[str, Any] = {}
 TOOLS: List[Dict[str, Any]] = []
+DEV_MODE: bool = False
+
+
+def get_yt_pin() -> str:
+    """
+    Haal de YT PIN uit SETTINGS['secrets']['yt_pin'] of SETTINGS['yt_pin'],
+    met fallback naar YTL_PIN_DEFAULT.
+    """
+    global SETTINGS
+
+    if not isinstance(SETTINGS, dict):
+        return YTL_PIN_DEFAULT
+
+    cfg_pin = None
+
+    secrets = SETTINGS.get("secrets", {})
+    if isinstance(secrets, dict):
+        cfg_pin = secrets.get("yt_pin")
+
+    if not cfg_pin:
+        cfg_pin = SETTINGS.get("yt_pin")
+
+    if cfg_pin:
+        return str(cfg_pin).strip()
+
+    return str(YTL_PIN_DEFAULT)
 
 
 def reload_config() -> None:
@@ -53,22 +100,30 @@ def reload_config() -> None:
     Herlaad settings.json en tools.json.
     Wordt gebruikt bij startup én door /restart.
     """
-    global SETTINGS, TOOLS_CFG, TOOLS
+    global SETTINGS, TOOLS_CFG, TOOLS, DEV_MODE
     print(">>> RELOADING CONFIG")
     SETTINGS = cynit_theme.load_settings()
+    DEV_MODE = bool(SETTINGS.get("dev_mode", False))
+
     TOOLS_CFG = cynit_theme.load_tools()
-    TOOLS = TOOLS_CFG.get("tools", [])
+    raw_tools = TOOLS_CFG.get("tools", [])
+
+    # Hidden tools alleen tonen in dev_mode
+    TOOLS = []
+    for t in raw_tools:
+        if t.get("hidden") and not DEV_MODE:
+            continue
+        TOOLS.append(t)
 
 
 # eerste keer laden bij start
 reload_config()
 
-
-
 # ===== FLASK-APP =====
 
 app = Flask(__name__)
-
+# Secret key voor sessions (PIN onthouden)
+app.secret_key = SETTINGS.get("secret_key", "cynit-dev-key")
 
 # ===== HOME-TEMPLATE =====
 
@@ -187,6 +242,27 @@ HOME_TEMPLATE = """
     }
   }
 
+  {% if dev_mode %}
+  /* Verborgen 'json' easter egg */
+  .secret-json {
+    color: #00FA00;              /* bijna onzichtbaar op zwarte achtergrond */
+    cursor: default;
+    transition: color 0.2s ease, transform 0.2s ease;
+  }
+  .secret-json:hover {
+    color: #00FA00;              /* CyNiT groen */
+    transform: scale(1.06) rotate(-1deg);
+    cursor: pointer;
+  }
+
+  /* Sleutel-emoji in de header bij hover */
+  .page-header:hover::after {
+    content: " 🔑";
+    margin-left: 4px;
+    font-size: 1.1rem;
+    color: #00FA00;
+  }
+  {% endif %}
   </style>
   <script>
   {{ common_js|safe }}
@@ -199,7 +275,14 @@ HOME_TEMPLATE = """
       <div>
         <h1>Welkom in CyNiT Tools</h1>
         <p class="muted">
-          Deze pagina leest automatisch je tools uit <code>config/tools.json</code>.
+          Deze pagina leest automatisch je tools uit
+          <code>config/
+          {% if dev_mode %}
+            <span class="secret-json">tools.json</span>
+          {% else %}
+            tools.json
+          {% endif %}
+          </code>.
         </p>
       </div>
     </div>
@@ -265,6 +348,30 @@ HOME_TEMPLATE = """
     </div>
   </div>
   {{ footer|safe }}
+
+  {% if dev_mode %}
+  <script>
+    document.addEventListener("DOMContentLoaded", function () {
+      const secretEl = document.querySelector(".secret-json");
+      if (secretEl) {
+        secretEl.addEventListener("click", function () {
+          window.location.href = "/yt-launch";
+        });
+      }
+
+      // Shortcut: Ctrl+Shift+Y → yt-launch
+      document.addEventListener("keydown", function (e) {
+        if (e.ctrlKey && e.shiftKey) {
+          const key = (e.key || "").toLowerCase();
+          if (key === "y") {
+            e.preventDefault();
+            window.location.href = "/yt-launch";
+          }
+        }
+      });
+    });
+  </script>
+  {% endif %}
 </body>
 </html>
 """
@@ -297,6 +404,13 @@ def _start_gui_tool(tool: Dict[str, Any]) -> None:
 
 # ===== ROUTES =====
 
+@app.before_request
+def _track_request():
+    """Eenvoudige request-teller voor /metrics."""
+    global REQUEST_COUNT
+    REQUEST_COUNT += 1
+    g.request_started = time.time()
+
 @app.route("/restart")
 def restart():
     """
@@ -305,8 +419,133 @@ def restart():
     """
     reload_config()
     return "OK"
-  
-from flask import flash  # als je flash messages wilt gebruiken
+
+@app.route("/health")
+def health():
+    """
+    Snelle healthcheck: zo licht mogelijk.
+    Wordt gebruikt door je PowerShell `ctools`-functie.
+    """
+    uptime = time.time() - START_TIME
+    data = {
+        "status": "ok",
+        "uptime_seconds": round(uptime, 2),
+        "dev_mode": DEV_MODE,
+        "tools_loaded": len(TOOLS),
+    }
+    return data, 200
+
+@app.route("/health/full")
+def health_full():
+    """
+    Uitgebreide healthcheck:
+    - controle op config-bestanden
+    - SP-YT aanwezigheid
+    - DCBaaS API-config
+    """
+    config_dir = BASE_DIR / "config"
+
+    checks = {}
+    overall_ok = True
+
+    def check_json(name, path: Path, required=True):
+        nonlocal overall_ok
+        if not path.exists():
+            state = "missing"
+            ok = not required
+        else:
+            try:
+                _ = json.loads(path.read_text(encoding="utf-8"))
+                state = "ok"
+                ok = True
+            except Exception as e:
+                state = f"invalid_json: {e}"
+                ok = False
+        if required and not ok:
+            overall_ok = False
+        checks[name] = {
+            "path": str(path),
+            "status": state,
+            "required": required,
+        }
+
+    # Belangrijkste configs
+    check_json("settings.json", config_dir / "settings.json", required=True)
+    check_json("tools.json",    config_dir / "tools.json",    required=True)
+    check_json("voica1.json",   config_dir / "voica1.json",   required=False)
+    check_json("exports.json",  config_dir / "exports.json",  required=False)
+    check_json("helpfiles.json",config_dir / "helpfiles.json",required=False)
+
+    # DCBaaS config
+    dcbaas_cfg = BASE_DIR / "config" / "dcbaas_api.json"
+    if dcbaas_cfg.exists():
+        try:
+            _ = json.loads(dcbaas_cfg.read_text(encoding="utf-8"))
+            checks["dcbaas_api.json"] = {
+                "path": str(dcbaas_cfg),
+                "status": "ok",
+                "required": False,
+            }
+        except Exception as e:
+            checks["dcbaas_api.json"] = {
+                "path": str(dcbaas_cfg),
+                "status": f"invalid_json: {e}",
+                "required": False,
+            }
+    else:
+        checks["dcbaas_api.json"] = {
+            "path": str(dcbaas_cfg),
+            "status": "missing",
+            "required": False,
+        }
+
+    # SP-YT aanwezigheid
+    yt_script = SPYT_DIR / "yt.py"
+    checks["spyt"] = {
+        "path": str(yt_script),
+        "status": "ok" if yt_script.exists() else "missing",
+        "required": False,
+    }
+
+    uptime = time.time() - START_TIME
+    status = "ok" if overall_ok else "error"
+
+    data = {
+        "status": status,
+        "uptime_seconds": round(uptime, 2),
+        "dev_mode": DEV_MODE,
+        "tools_loaded": len(TOOLS),
+        "checks": checks,
+    }
+    http_status = 200 if status == "ok" else 500
+    return data, http_status
+
+@app.route("/metrics")
+def metrics():
+    """
+    Eenvoudige Prometheus-achtige metrics.
+    Tekst-formaat, zodat bv. Prometheus het kan scrapen.
+    """
+    uptime = time.time() - START_TIME
+    lines = [
+        "# HELP cynit_tools_uptime_seconds Uptime van de CyNiT Tools hub in seconden.",
+        "# TYPE cynit_tools_uptime_seconds gauge",
+        f"cynit_tools_uptime_seconds {uptime:.0f}",
+        "",
+        "# HELP cynit_tools_requests_total Aantal HTTP requests sinds start.",
+        "# TYPE cynit_tools_requests_total counter",
+        f"cynit_tools_requests_total {REQUEST_COUNT}",
+        "",
+        "# HELP cynit_tools_tools_loaded Aantal geladen tools uit tools.json.",
+        "# TYPE cynit_tools_tools_loaded gauge",
+        f"cynit_tools_tools_loaded {len(TOOLS)}",
+        "",
+        "# HELP cynit_tools_dev_mode Dev mode actief (1) of niet (0).",
+        "# TYPE cynit_tools_dev_mode gauge",
+        f"cynit_tools_dev_mode {1 if DEV_MODE else 0}",
+    ]
+    body = "\n".join(lines) + "\n"
+    return body, 200, {"Content-Type": "text/plain; version=0.0.4"}
 
 @app.route("/signal-test", methods=["GET", "POST"])
 def signal_test():
@@ -378,6 +617,7 @@ def signal_test():
       font-size: 0.9rem;
     }
   </style>
+
   <script>
     {{ common_js|safe }}
   </script>
@@ -430,7 +670,8 @@ def signal_test():
         ok=ok,
         err=err,
     )
-  
+
+
 @app.route("/", methods=["GET"])
 def index():
     colors = SETTINGS.get("colors", {})
@@ -446,9 +687,8 @@ def index():
     except Exception:
         home_columns = 3
 
-    # logo-url gewoon hetzelfde als in header_html:
     paths = SETTINGS.get("paths", {})
-    logo_url = paths.get("logo", "logo.png")  # => "logo.png" → /logo.png
+    logo_url = paths.get("logo", "logo.png")
 
     base_css = cynit_layout.common_css(SETTINGS)
     common_js = cynit_layout.common_js()
@@ -471,14 +711,15 @@ def index():
         footer=footer_html,
         home_columns=home_columns,
         logo_url=logo_url,
+        dev_mode=DEV_MODE,
     )
 
-from flask import url_for  # onderaan zodat het boven index() beschikbaar is
 
 @app.route("/logo.png")
 def logo_png():
     # Serveert het logo naast ctools.py
     return send_from_directory(str(BASE_DIR), "logo.png")
+
 
 @app.route("/start/", methods=["POST"])
 def start_tool():
@@ -492,6 +733,79 @@ def start_tool():
 
     return redirect(url_for("index"))
 
+
+@app.route("/yt-launch", methods=["GET", "POST"])
+def yt_launch():
+    """
+    PIN-beveiligde launcher voor de CyNiT YouTube Converter (SP-YT/yt.py).
+    - PIN komt uit settings (secrets.yt_pin of yt_pin) met fallback.
+    - PIN wordt in session onthouden (yt_unlocked=True).
+    """
+    def port_open(host: str, port: int) -> bool:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(0.3)
+                return sock.connect_ex((host, port)) == 0
+        except Exception:
+            return False
+
+    # Als we al ontgrendeld zijn deze sessie → direct starten/redirect
+    if session.get("yt_unlocked") is True and request.method == "GET":
+        yt_script = SPYT_DIR / "yt.py"
+
+        if not yt_script.exists():
+            return "yt.py niet gevonden", 500
+
+        # Draait YT al?
+        if port_open("127.0.0.1", 5555):
+            return redirect("http://127.0.0.1:5555")
+
+        # Anders: starten
+        subprocess.Popen(
+            [sys.executable, str(yt_script)],
+            cwd=str(SPYT_DIR),
+        )
+
+        start = time.time()
+        while time.time() - start < 10:
+            if port_open("127.0.0.1", 5555):
+                return redirect("http://127.0.0.1:5555")
+            time.sleep(0.4)
+
+        return "YT-app start niet correct op.", 500
+
+    # GET → PIN-vraag tonen
+    if request.method == "GET":
+        return render_template_string("""
+        <html><body style="background:#0a0a0a;color:#fff;font-family:system-ui;">
+            <div style="max-width:300px;margin:120px auto;text-align:center;">
+                <h2 style="margin-bottom:20px;">YT Launcher PIN</h2>
+                <form method="POST">
+                    <input name="pin" type="password"
+                           style="padding:8px;width:100%;border-radius:6px;
+                                  border:1px solid #333;background:#111;color:#0f0;font-size:1rem;
+                                  text-align:center;letter-spacing:4px;" autofocus>
+                    <button style="margin-top:15px;padding:8px 16px;border:0;
+                                    border-radius:6px;background:#0f0;color:#000;font-weight:600;">
+                        Unlock
+                    </button>
+                </form>
+            </div>
+        </body></html>
+        """)
+
+    # POST → PIN checken
+    pin = (request.form.get("pin") or "").strip()
+    if pin != get_yt_pin():
+        return "<h3 style='color:red;font-family:system-ui;'>Foute PIN</h3>", 403
+
+    # PIN is ok → onthouden in deze sessie
+    session["yt_unlocked"] = True
+
+    # En dan via GET-logica verdergaan (zodat code niet dubbel is)
+    return redirect(url_for("yt_launch"))
+
+
 @app.route("/debug/routes")
 def debug_routes():
     output = ["<h1>Registered Routes</h1><ul>"]
@@ -499,6 +813,7 @@ def debug_routes():
         output.append(f"<li>{rule}</li>")
     output.append("</ul>")
     return "\n".join(output)
+
 
 # ===== EXTERNE TOOL-ROUTES REGISTREREN =====
 
@@ -544,8 +859,9 @@ def register_external_routes(app: Flask) -> None:
         print("   ERROR: dcb_org_export.register_web_routes FAILED:")
         print("   -->", exc)
 
+
 # ===== MAIN =====
 
 if __name__ == "__main__":
     register_external_routes(app)
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False)

@@ -37,15 +37,6 @@
       "description": "Bewerk settings.json, VOICA1-config en templates centraal via CyNiT Tools."
     },
     {
-      "id": "signaltest",
-      "name": "Signal Test",
-      "type": "web",
-      "web_path": "/signal-test",
-      "script": "cynit_notify.py",
-      "icon_web": "📲",
-      "description": "Stuur een testbericht via Signal (signal-cli)."
-    },
-    {
       "id": "dcbaas-org-export",
       "name": "DCBaaS org-export",
       "type": "web",
